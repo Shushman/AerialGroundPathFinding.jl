@@ -3,6 +3,9 @@ uuid = "a953f879-f603-4a55-a90d-f6afb9ebeab6"
 authors = ["Shushman <shushmanchoudhury@gmail.com> and contributors"]
 version = "0.1.0"
 
+[deps]
+LightGraphs = "093fc24a-ae57-5d10-9952-331d41423f4d"
+
 [compat]
 julia = "1.3"
 
