@@ -64,7 +64,7 @@ function MultiAgentPathFinding.create_constraints_from_conflict(env::Coordinated
     if env.num_global_conflicts > env.threshold_global_conflicts
         throw(DomainError("Too many conflicts!"))
     end
-    @infiltrate
+    # @infiltrate
 
     constraint = Dict(conflict.aerial_agent_ids[1]=>GroundTransitConstraint(conflict.overlap_vertices), conflict.aerial_agent_ids[2]=> GroundTransitConstraint(conflict.overlap_vertices))
 
