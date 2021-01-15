@@ -1,40 +1,32 @@
-## Various helper functions for working with latitude and longitude
-const Location2D = SVector{2, Float64}
-const LatLonCoords = NamedTuple{(:lat, :lon), Tuple{Float64,Float64}}
-LatLonCoords() = (lat = 0.0, lon = 0.0)
-
-"""
-Return the vector form of a latitude-longitude point [lat, lon]
-"""
-function convert_to_vector(c::LatLonCoords)
-    return Location2D(c.lat, c.lon)
-end
-
-struct EuclideanLatLongMetric <: Metric
-end
-
 function Distances.evaluate(::EuclideanLatLongMetric,
                             coords1::Location2D,
                             coords2::Location2D)
     deglen = 110.25
     x = coords1[1]- coords2[1]
     y = (coords1[2] - coords2[2])*cos(coords2[1])
-    return deglen*sqrt(x^2 + y^2)
+    return deglen*sqrt(x^2 + y^2)*1000.0
 end
 
-@with_kw struct CityParams
-    lat_start::Float64
-    lat_end::Float64
-    lon_start::Float64
-    lon_end::Float64
+function get_location2D_list(node_attribs_file::String)
+
+    node_attribs_dict = JSON.parsefile(node_attribs_file)
+    nnodes = length(keys(node_attribs_dict))
+
+    location_list = Vector{Location2D}(undef, nnodes)
+    for (k, v) in node_attribs_dict
+        location_list[parse(Int64,k)] = Location2D(parse(Float64, v["y"]), parse(Float64, v["x"]))
+    end
+
+    return location_list
 end
 
-function parse_city_params(param_file::String)
+function compute_bidir_astar_euclidean(g::LightGraphs.AbstractGraph, s::Int64, t::Int64, distmx::AbstractMatrix{Float64}, node_locations::Vector{Location2D})
 
-    params_dict = TOML.parsefile(param_file)
+    metric = EuclideanLatLongMetric()
+    fwd_heuristic(u, t) = Distances.evaluate(metric, node_locations[u], node_locations[t])
+    bwd_heuristic(u, s) = Distances.evaluate(metric, node_locations[s], node_locations[u])
 
-    return CityParams(lat_start = params_dict["LATSTART"],
-                      lat_end = params_dict["LATEND"],
-                      lon_start = params_dict["LONSTART"],
-                      lon_end = params_dict["LONEND"])
+    bidir_astar = ShortestPaths.BidirAStar(fwd_heuristic, bwd_heuristic)
+
+    return ShortestPaths.shortest_paths(g, s, t, distmx, bidir_astar)
 end
