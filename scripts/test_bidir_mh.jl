@@ -30,13 +30,14 @@ function main(seed::Int64, trials::Int64=10)
         target = rand(rng, 1:nvg)
 
         astar_sp = LightGraphs.ShortestPaths.shortest_paths(manhattan_graph, source, target, manhattan_sparse_wts, LightGraphs.ShortestPaths.BidirAStar())
-        
+
         bidir_astar = LightGraphs.ShortestPaths.BidirAStar()
 
         if isempty(astar_sp.path) == false
 
             ast_time = @belapsed LightGraphs.ShortestPaths.shortest_paths($manhattan_graph, $source, $target, $manhattan_sparse_wts, $bidir_astar)
-            
+
+
             eucl_time = @belapsed compute_bidir_astar_euclidean($manhattan_graph, $source, $target, $manhattan_sparse_wts, $location_list)
 
             push!(astar_times, ast_time)

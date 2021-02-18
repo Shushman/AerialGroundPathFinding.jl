@@ -23,15 +23,17 @@ export
     LatLonCoords,
     EuclideanLatLongMetric,
     GroundTransitState,
+    AerialMAPFState,
     GroundTransitAction,
     GroundTransitConflict,
     GroundTransitConstraint,
     get_location2D_list,
     compute_bidir_astar_euclidean,
     CoordinatedMAPFEnv,
-    update_aerial_ground_paths_cbs_solution!,
+    # update_aerial_ground_paths_cbs_solution!,
     set_ground_transit_graph!,
-    compute_ground_paths!
+    compute_independent_paths
+    # aerial_ground_coord_path_cost
 
 # export
 #     ALTInfo,
@@ -41,6 +43,7 @@ export
 
 include("types.jl")
 include("utils.jl")
+include("stage1_paths.jl")
 include("ground_transit_pathfinding.jl")
 # include("astar_landmarks.jl")
 

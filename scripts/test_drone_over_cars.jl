@@ -13,7 +13,7 @@ const MANHATTAN_WEIGHTFILE = "../data/manhattan_sparse_wts.jld2"
 const SANFRANCISCO_NODEFILE = "../data/sanfrancisco_node_attribs.json"
 const SANFRANCISCO_WEIGHTFILE = "../data/sanfrancisco_sparse_wts.jld2"
 
-const NCARS = 5
+const NCARS = 10
 const NDRONES = 10
 
 
@@ -32,30 +32,32 @@ function main(graph_weights::AbstractMatrix, loc_list_file::String, num_cars::In
     env = CoordinatedMAPFEnv(ground_task_list=ground_task_list, aerial_task_list=aerial_task_list, road_graph=graph, road_graph_wts=graph_weights, location_list=location_list)
 
     # Compute ground paths and assign
-    compute_ground_paths!(env)
+    env.ground_paths = compute_independent_paths(env, env.ground_task_list)
 
     # Compute drone paths and costs
-    direct_drone_sps = Vector{Vector{Int64}}(undef, num_drones)
-    direct_drone_sp_costs = Vector{Float64}(undef, num_drones)
+    direct_drone_paths = compute_independent_paths(env, env.aerial_task_list)
 
-    for (aerial_id, task) in enumerate(env.aerial_task_list)
+    # aerial_ground_coord_costs = zeros(Float64, NCARS, NDRONES)
+    # aerial_ground_coord_segments = Dict{Tuple{Int64,Int64},Tuple{Int64,Int64}}()
 
-        bidir_sp = compute_bidir_astar_euclidean(env.road_graph, task.origin, task.dest, env.road_graph_wts, env.location_list)
+    # for c = 1:num_cars
+    #     for d = 1:num_drones
+    #         aerial_ground_coord_costs[c, d], aerial_ground_coord_segments[(c, d)] = aerial_ground_coord_path_cost(env, d, c)
+    #     end
+    # end
+    drone_dists = [ddp.total_dist for ddp in direct_drone_paths]
 
-        direct_drone_sps[aerial_id] = bidir_sp.path
-        direct_drone_sp_costs[aerial_id] = bidir_sp.dist
-    end
+    set_ground_transit_graph!(env, drone_dists)
 
-    return env, direct_drone_sp_costs, direct_drone_sps
-
+    return env, direct_drone_paths
 end
 
 @load MANHATTAN_WEIGHTFILE manhattan_sparse_wts
 
-env, costs, sps = main(manhattan_sparse_wts, MANHATTAN_NODEFILE, NCARS, NDRONES, 1234)
+env, dir_drone_paths = main(manhattan_sparse_wts, MANHATTAN_NODEFILE, NCARS, NDRONES, 1234)
 
-solver = CBSSolver{GroundTransitState,GroundTransitAction,Float64,SumOfCosts,GroundTransitConflict,GroundTransitConstraint,CoordinatedMAPFEnv}(env=env)
+solver = CBSSolver{AerialMAPFState,GroundTransitAction,Float64,SumOfCosts,GroundTransitConflict,GroundTransitConstraint,CoordinatedMAPFEnv}(env=env)
 
-set_ground_transit_graph!(env, costs)
+initial_states = [AerialMAPFState(idx=i, ground_transit_idx=sg[1]) for (i, sg) in enumerate(env.gtg_drone_start_goal_idxs)]
 
-initial_states = [env.ground_transit_graph.vertices[u] for (u, _) in env.gtg_drone_start_goal_idxs]
+solution = search!(solver, initial_states)
