@@ -10,6 +10,8 @@ using TOML
 using Infiltrator
 using SparseArrays
 using JSON
+using DataStructures
+using StatsFuns
 
 using Graphs
 using LightGraphs
@@ -27,24 +29,27 @@ export
     GroundTransitAction,
     GroundTransitConflict,
     GroundTransitConstraint,
+    GroundMAPFState,
+    GroundMAPFAction,
+    GroundMAPFConflict,
+    GroundMAPFConstraint
+
+export
     get_location2D_list,
     compute_bidir_astar_euclidean,
     CoordinatedMAPFEnv,
-    # update_aerial_ground_paths_cbs_solution!,
+    update_aerial_ground_paths_cbs_solution!,
     set_ground_transit_graph!,
-    compute_independent_paths
-    # aerial_ground_coord_path_cost
+    compute_independent_paths,
+    get_tasks_with_valid_path,
+    augment_road_graph_with_aerial_paths!,
+    update_ground_paths_with_ground_mapf_result!,
+    compute_total_cost
 
-# export
-#     ALTInfo,
-#     greedy_landmarks,
-#     landmark_distances,
-#     BidirALT
 
 include("types.jl")
 include("utils.jl")
 include("stage1_paths.jl")
 include("ground_transit_pathfinding.jl")
-# include("astar_landmarks.jl")
 
 end

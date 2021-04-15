@@ -23,7 +23,7 @@ function get_location2D_list(node_attribs_file::String)
     return location_list
 end
 
-function compute_bidir_astar_euclidean(g::LightGraphs.AbstractGraph, s::Int64, t::Int64, distmx::AbstractMatrix{Float64}, node_locations::Vector{Location2D})
+function compute_bidir_astar_euclidean(g::LightGraphs.AbstractGraph, s::Int64, t::Int64, distmx::AbstractMatrix{Float64}, node_locations::Vector{Location2D}, nbrs_to_exclude::Set{Int64}=Set{Int64}())
 
     if s == t
         return (path=[s], dist=0.0)
@@ -33,7 +33,7 @@ function compute_bidir_astar_euclidean(g::LightGraphs.AbstractGraph, s::Int64, t
     fwd_heuristic(u, t) = Distances.evaluate(metric, node_locations[u], node_locations[t])
     bwd_heuristic(u, s) = Distances.evaluate(metric, node_locations[s], node_locations[u])
 
-    bidir_astar = ShortestPaths.BidirAStar(fwd_heuristic, bwd_heuristic)
+    bidir_astar = ShortestPaths.BidirAStar(fwd_heuristic, bwd_heuristic, nbrs_to_exclude)
 
     return ShortestPaths.shortest_paths(g, s, t, distmx, bidir_astar)
 end
@@ -47,14 +47,16 @@ function get_non_dominated_transit_points(env::CoordinatedMAPFEnv, gstart::Int64
     vgtg = env.ground_transit_graph.vertices[v.ground_transit_idx]
 
     for seq = gstart:gend-1
-        if ~(seq in avoid_vertex_set)
-            seq_gtg = env.ground_transit_graph.vertices[seq]
-
-            ddiff = flight_heur ? distance_lat_lon_euclidean(env.location_list[vgtg.road_vtx_id], env.location_list[seq_gtg.road_vtx_id]) : env.ground_transit_weights[(v.ground_transit_idx, seq_gtg.idx)]
-            tval = max(v.timeval + ddiff/AvgSpeed, seq_gtg.timeval)
-
-            push!(time_dist_set, (idx=seq_gtg.idx, timeval=tval, distval=v.distval+ddiff))
+        # As soon as you hit a conflict vertex, stop
+        if (seq in avoid_vertex_set)
+            break
         end
+        seq_gtg = env.ground_transit_graph.vertices[seq]
+
+        ddiff = flight_heur ? distance_lat_lon_euclidean(env.location_list[vgtg.road_vtx_id], env.location_list[seq_gtg.road_vtx_id]) : env.ground_transit_weights[(v.ground_transit_idx, seq_gtg.idx)]
+        tval = max(v.timeval + ddiff/AvgSpeed, seq_gtg.timeval)
+
+        push!(time_dist_set, (idx=seq_gtg.idx, timeval=tval, distval=v.distval+ddiff))
     end # seq = gstart:gend-1
 
     if isempty(time_dist_set)
@@ -81,4 +83,65 @@ function get_non_dominated_transit_points(env::CoordinatedMAPFEnv, gstart::Int64
     non_dom_set = time_dist_set[non_dom_idxs]
 
     return non_dom_set
+end
+
+function get_best_transit_connection(env::CoordinatedMAPFEnv, gstart::Int64, gend::Int64, avoid_vertex_set::Set{Int64}, v::AerialMAPFState, flight_heur::Bool)
+
+    best_weighted_cost = Inf
+
+    vgtg = env.ground_transit_graph.vertices[v.ground_transit_idx]
+
+    result = (idx=0, timeval=0.0, distval=0.0)
+
+    for seq = gstart:gend-1
+        # As soon as you hit a conflict vertex, stop
+        if ~(seq in avoid_vertex_set)
+            
+            seq_gtg = env.ground_transit_graph.vertices[seq]
+            ddiff = flight_heur ? distance_lat_lon_euclidean(env.location_list[vgtg.road_vtx_id], env.location_list[seq_gtg.road_vtx_id]) : env.ground_transit_weights[(v.ground_transit_idx, seq_gtg.idx)]
+            tval = max(v.timeval + ddiff/AvgSpeed, seq_gtg.timeval)
+            dval = v.distval + ddiff
+            tdiff = tval - seq_gtg.timeval
+
+            weighted_cost = env.alpha_weight_distance*ddiff + (1.0-env.alpha_weight_distance)*tdiff
+            if weighted_cost < best_weighted_cost
+                best_weighted_cost = weighted_cost
+                result = (idx=seq_gtg.idx, timeval=tval, distval=dval)
+            end
+        end
+    end # seq = gstart:gend-1
+
+    if best_weighted_cost < Inf
+        return result
+    else
+        return nothing
+    end
+end
+
+
+function get_tasks_with_valid_path(road_graph::LightGraphs.AbstractGraph, road_graph_wts::AbstractMatrix{Float64}, location_list::Vector{Location2D}, num_tasks::Int64, rng::AbstractRNG)
+
+    nvg = nv(road_graph)
+    task_list = Vector{AgentTask}(undef, num_tasks)
+
+    for t = 1:num_tasks
+
+        path_exists = false
+
+        start = -1
+        goal = -1
+
+        while ~path_exists
+            start = rand(rng, 1:nvg)
+            goal = rand(rng, 1:nvg)
+
+            bidir_sp = compute_bidir_astar_euclidean(road_graph, start, goal, road_graph_wts, location_list)
+
+            path_exists = (isempty(bidir_sp.path) == false)
+                
+        end
+        task_list[t] = AgentTask((start, goal))
+    end
+
+    return task_list
 end

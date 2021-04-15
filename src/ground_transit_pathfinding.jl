@@ -31,7 +31,7 @@ end
 
 MultiAgentPathFinding.get_empty_constraint(::Type{GroundTransitConstraint}) = GroundTransitConstraint()
 
-function MultiAgentPathFinding.get_first_conflict(env::CoordinatedMAPFEnv, solution::Vector{PR}) where {PR <: PlanResult}
+function MultiAgentPathFinding.get_first_conflict(env::CoordinatedMAPFEnv, solution::Vector{PlanResult{AerialMAPFState,GroundTransitAction,Float64}})
 
     for (i, sol_i) in enumerate(solution[1:end-1])
         for (j, sol_j) in enumerate(solution[i+1:end])
@@ -54,6 +54,11 @@ function MultiAgentPathFinding.get_first_conflict(env::CoordinatedMAPFEnv, solut
 
             # If any overlap verts, there is a conflict
             if !isempty(pair_overlap_verts)
+                env.num_global_conflicts += 1
+                println("Aerial CBS conflict number $(env.num_global_conflicts)")
+                if env.num_global_conflicts > env.threshold_global_conflicts
+                    throw(DomainError("Too many conflicts!"))
+                end
                 return GroundTransitConflict(pair_overlap_verts, (i, i+j))
             end
         end
@@ -64,14 +69,9 @@ end
 
 function MultiAgentPathFinding.create_constraints_from_conflict(env::CoordinatedMAPFEnv, conflict::GroundTransitConflict)
 
-    env.num_global_conflicts += 1
-    if env.num_global_conflicts > env.threshold_global_conflicts
-        throw(DomainError("Too many conflicts!"))
-    end
-
     constraint = Dict(conflict.aerial_agent_ids[1]=>GroundTransitConstraint(conflict.overlap_gtg_vertices), conflict.aerial_agent_ids[2]=> GroundTransitConstraint(conflict.overlap_gtg_vertices))
-    println("High level conflict number $(env.num_global_conflicts)!")
-    @show constraint
+    # println("High level conflict number $(env.num_global_conflicts)!")
+    # @show constraint
     # @infiltrate
 
     return [constraint]
@@ -185,11 +185,13 @@ end # function generate_ground_transit_graph
 
 
 # TODO: Review
-# Focal transition heuristic just counts boarding/capacity constraints
-function focal_transition_heuristic_transit(env::CoordinatedMAPFEnv, solution::Vector{PR}, aerial_agent_id::Int64, u::GroundTransitState, v::GroundTransitState) where {PR <: PlanResult}
+# Focal transition heuristic just counts boarding constraints
+function focal_transition_heuristic_transit(env::CoordinatedMAPFEnv, solution::Vector{PlanResult{AerialMAPFState,GroundTransitAction,Float64}}, aerial_agent_id::Int64, u::AerialMAPFState, v::AerialMAPFState) 
+
+    vgtg = env.ground_transit_graph.vertices[v.ground_transit_idx]
 
     # Trivial check that it doesn't fly to goal
-    if v.ground_agent_id == 0
+    if vgtg.ground_agent_id == 0
         return 0
     end
 
@@ -199,10 +201,11 @@ function focal_transition_heuristic_transit(env::CoordinatedMAPFEnv, solution::V
     for (i, aerial_soln) in enumerate(solution)
         if i != aerial_agent_id && (~isempty(aerial_soln))
 
-            for (vtx_state, _) in aerial_soln.states[2:end-1]
+            for (amapf_state, _) in aerial_soln.states[2:end-1]
 
+                vtx_state = env.ground_transit_graph.vertices[amapf_state.ground_transit_idx]
                 # Add if any other drone uses at any point
-                if vtx_state.ground_agent_id == v.ground_agent_id && vtx_state.vertex_along_path == v.vertex_along_path
+                if vtx_state.ground_agent_id == vgtg.ground_agent_id && vtx_state.vertex_along_path == vgtg.vertex_along_path 
                     num_conflicts += 1
                     continue
                 end
@@ -214,7 +217,7 @@ function focal_transition_heuristic_transit(env::CoordinatedMAPFEnv, solution::V
 end
 
 # TODO: Review
-function MultiAgentPathFinding.focal_heuristic(env::CoordinatedMAPFEnv, solution::Vector{PR}) where {PR <: PlanResult}
+function MultiAgentPathFinding.focal_heuristic(env::CoordinatedMAPFEnv, solution::Vector{PlanResult{AerialMAPFState,GroundTransitAction,Float64}}) 
 
     num_potential_conflicts = 0
 
@@ -224,7 +227,10 @@ function MultiAgentPathFinding.focal_heuristic(env::CoordinatedMAPFEnv, solution
             for (si, _) in sol_i.states[2:end-1]
                 for (sj, _) in sol_j.states[2:end-1]
 
-                    if si.ground_agent_id == sj.ground_agent_id && si.vertex_along_path == sj.vertex_along_path
+                    si_gtg = env.ground_transit_graph.vertices[si.ground_transit_idx]
+                    sj_gtg = env.ground_transit_graph.vertices[sj.ground_transit_idx]
+
+                    if si_gtg.ground_agent_id == sj_gtg.ground_agent_id && si_gtg.vertex_along_path == sj_gtg.vertex_along_path && si_gtg.ground_agent_id != 0
                         num_potential_conflicts += 1
                     end
                 end
@@ -235,62 +241,69 @@ function MultiAgentPathFinding.focal_heuristic(env::CoordinatedMAPFEnv, solution
     return num_potential_conflicts
 end
 
-# # TODO: Change as for CBS
-# function MultiAgentPathFinding.low_level_search!(solver::ECBSSolver, aerial_agent_id::Int64, s::AerialMAPFState, constraints::GroundTransitConstraint, solution::Vector{PR}) where {PR <: PlanResult}
+# Just use BFS here
+function MultiAgentPathFinding.low_level_search!(solver::ECBSSolver, aerial_agent_id::Int64, s::AerialMAPFState, constraint::GroundTransitConstraint, solution::Vector{PlanResult{AerialMAPFState,GroundTransitAction,Float64}}) 
 
-#     ## TODO
-#     # distance_heuristic(u) = 0 (can always take a car all the way there)
-#     env = solver.env
+    ## TODO
+    env = solver.env
 
-#     edge_wt_fn(u, v) = amapfg_edge_wt_fn(env, u, v)
-#     admissible_heuristic(u) = 0.0   # Can always take a car to the goal
-#     focal_state_heuristic(u) = 0.0
-#     focal_transition_heuristic(u, v) = focal_transition_heuristic_transit(env, solution, aerial_agent_id, u, v)
+    env.aerial_mapf_graph = SimpleVListGraph{AerialMAPFState}()
+    Graphs.add_vertex!(env.aerial_mapf_graph, s)
 
-#     # Set start and goal
-#     start_idx = env.gtg_drone_start_goal_idxs[aerial_agent_id][1]
-#     env.next_gtg_goal_idx = env.gtg_drone_start_goal_idxs[aerial_agent_id][2]
-#     @assert start_idx == s.idx "Mismatch in start index!" # TODO: Remove later
+    env.gtg_idx_gval =  Dict{Int64,Float64}()
 
-#     states = Tuple{GroundTransitState, Float64}[]
-#     actions = Tuple{GroundTransitAction, Float64}[]
+    edge_wt_fn(u, v) = amapfg_edge_wt_fn(env, u, v)
+    admissible_heuristic(u) = direct_flight_time_heuristic(env, u)
 
-#     vis = GroundTransitGoalVisitor(env, constraints[1].avoid_gtg_vertex_set)
+    # Set start and goal
+    start_idx = 1   # Always one since graph reinitialized
+    env.next_gtg_goal_idx = env.gtg_drone_start_goal_idxs[aerial_agent_id][2]
+    env.next_amapfg_goal_idx = 0
 
-#     a_star_eps_states = a_star_implicit_epsilon_path!(env.ground_transit_graph,
-#                                                       edge_wt_fn,
-#                                                       start_idx,
-#                                                       vis,
-#                                                       solver.weight,
-#                                                       admissible_heuristic,
-#                                                       focal_state_heuristic,
-#                                                       focal_transition_heuristic
-#                                                       )
+    vis = GroundTransitGoalVisitor(env, constraint.avoid_gtg_vertex_set)
+
+    # println("Size of constraints: $(length(constraint.avoid_gtg_vertex_set))")
+
+    a_star_states = a_star_implicit_shortest_path!(env.aerial_mapf_graph,
+                                                    edge_wt_fn,
+                                                    start_idx,
+                                                    vis,
+                                                    admissible_heuristic
+                                                    )
+    # println("Size of amapf_graph: $(length(env.aerial_mapf_graph.vertices))")
     
-#     # Get solution from a_star_eps_states
-#     # NOTE: It should always have a solution because drone can just fly
-#     a_star_states = a_star_eps_states.a_star_states
-#     @assert haskey(a_star_states.parent_indices, env.next_gtg_goal_idx)
+    # Get solution from a_star_eps_states
+    # NOTE: It should always have a solution because drone can just fly
+    @assert haskey(a_star_states.parent_indices, env.next_amapfg_goal_idx)
 
-#     # Get path cost
-#     sp_cost = a_star_states.dists[env.next_gtg_goal_idx]
+    # Get path cost
+    states = Tuple{AerialMAPFState,Float64}[]
+    actions = Tuple{GroundTransitAction, Float64}[]
 
-#     # Get path
-#     sp_idxs = shortest_path_indices(a_star_states.parent_indices, env.ground_transit_graph, start_idx, env.next_gtg_goal_idx)
+    # Get path cost
+    sp_cost = a_star_states.dists[env.next_amapfg_goal_idx]
 
-#     push!(states, (s, 0.0))
+    # Get path
+    sp_idxs = shortest_path_indices(a_star_states.parent_indices, env.aerial_mapf_graph, start_idx, env.next_amapfg_goal_idx)
 
-#     # Traverse sp_idxs and set up states and actions
-#     for i = 2:length(sp_idxs)
+    push!(states, (s, 0.0))
 
-#         u, v =  (sp_idxs[i-1], sp_idxs[i])
-#         push!(actions, (get_mapf_action(env, u, v), env.ground_transit_weights[(u, v)]))
+    # Traverse sp_idxs and set up states and actions
+    for i = 2:length(sp_idxs)
 
-#         push!(states, (env.ground_transit_graph.vertices[v], a_star_states.dists[v]))
-#     end
+        u, v =  (sp_idxs[i-1], sp_idxs[i])
 
-#     return PlanResult{GroundTransitState,GroundTransitAction,Float64}(states, actions, sp_cost, a_star_eps_states.best_fvalue)
-# end # function low_level_search
+        # NOTE: Create new state because we are going to delete graph later
+        new_state = deepcopy(env.aerial_mapf_graph.vertices[v])
+        push!(states, (new_state, a_star_states.dists[v]))
+
+        # All derived info but can be useful
+        push!(actions, (get_mapf_action(env, u, v), a_star_states.dists[v] - a_star_states.dists[u]))
+    end
+
+
+    return PlanResult{AerialMAPFState,GroundTransitAction,Float64}(states, actions, sp_cost, sp_cost)
+end # function low_level_search
 
 
 
@@ -309,7 +322,6 @@ function MultiAgentPathFinding.low_level_search!(solver::CBSSolver, aerial_agent
     edge_wt_fn(u, v) = amapfg_edge_wt_fn(env, u, v)
     
     admissible_heuristic(u) = direct_flight_time_heuristic(env, u)
-    # admissible_heuristic(u) = 0.0
 
     # Set start and goal
     start_idx = 1   # Always one since graph reinitialized
@@ -355,10 +367,6 @@ function MultiAgentPathFinding.low_level_search!(solver::CBSSolver, aerial_agent
         # All derived info but can be useful
         push!(actions, (get_mapf_action(env, u, v), a_star_states.dists[v] - a_star_states.dists[u]))
     end
-
-    # if ~isempty(constraint.avoid_gtg_vertex_set)
-    #     @infiltrate
-    # end
 
     return PlanResult{AerialMAPFState,GroundTransitAction,Float64}(states, actions, sp_cost, sp_cost)
 end # function low_level_search
@@ -433,24 +441,24 @@ function Graphs.include_vertex!(vis::GroundTransitGoalVisitor, u::AerialMAPFStat
         # First get non-dominated gtg indices and then add aerial mapf state versions of them
         # For timeval use the max of gtg time and drone timeval
         for (gstart, gend) in env.gtg_ground_path_start_ends
-            gts_non_dom = get_non_dominated_transit_points(env, gstart, gend, avoid_gtg_vertex_set, v, false)
+            # gts_non_dom = get_non_dominated_transit_points(env, gstart, gend, avoid_gtg_vertex_set, v, false)
 
             # Add AerialMAPFState versions of them
-            for gts_tup in gts_non_dom
+            # for gts_tup in gts_non_dom
+
+            gts_tup = get_best_transit_connection(env, gstart, gend, avoid_gtg_vertex_set, v, false)
+
+            if ~isnothing(gts_tup)
 
                 idx_ctr += 1
                 new_vert = AerialMAPFState(idx=idx_ctr, ground_transit_idx=gts_tup.idx, timeval=gts_tup.timeval, distval=gts_tup.distval)
-
-                # if gts_tup.idx in avoid_gtg_vertex_set
-                #     @infiltrate
-                # end
 
                 Graphs.add_vertex!(env.aerial_mapf_graph, new_vert)
                 push!(nbrs, idx_ctr)
 
                 env.gtg_idx_gval[gts_tup.idx] = env.alpha_weight_distance*new_vert.distval + (1.0 - env.alpha_weight_distance)*new_vert.timeval
 
-            end
+            end # isnothing(gts_tup)
         end
 
     else
@@ -458,10 +466,8 @@ function Graphs.include_vertex!(vis::GroundTransitGoalVisitor, u::AerialMAPFStat
         if vgtg.ground_agent_id != ugtg.ground_agent_id
 
             new_considered_cars = union(v.considered_cars, Set{Int64}([vgtg.ground_agent_id]))
-            # @infiltrate
 
             next_gtg = env.ground_transit_graph.vertices[vgtg.idx + 1]
-            # @assert next_gtg.ground_agent_id == vgtg.ground_agent_id && next_gtg.vertex_along_path == vgtg.vertex_along_path+1
 
             if ~(next_gtg.idx in avoid_gtg_vertex_set)
 
@@ -515,30 +521,38 @@ function Graphs.include_vertex!(vis::GroundTransitGoalVisitor, u::AerialMAPFStat
             for (gid, (gstart, gend)) in enumerate(env.gtg_ground_path_start_ends)
                 
                 if gid != vgtg.ground_agent_id && ~(gid in v.considered_cars)
-                    gts_non_dom = get_non_dominated_transit_points(env, gstart, gend, avoid_gtg_vertex_set, v, true)
-        
-                    if ~isempty(gts_non_dom)
-                        # Add AerialMAPFState versions of them
-                        for gts_tup in gts_non_dom
+                    # gts_non_dom = get_non_dominated_transit_points(env, gstart, gend, avoid_gtg_vertex_set, v, true)
+                    
+                    gts_tup = get_best_transit_connection(env, gstart, gend, avoid_gtg_vertex_set, v, true)
 
-                            temp_gval = env.alpha_weight_distance*gts_tup.distval + (1.0 - env.alpha_weight_distance)*gts_tup.timeval
+                    # Add AerialMAPFState versions of them
+                    if ~isnothing(gts_tup)
 
-                            if ~haskey(env.gtg_idx_gval, gts_tup.idx) || temp_gval < env.gtg_idx_gval[gts_tup.idx]
+                        # At least here compute the real thing, the true SP between transit connections
+                        # bidir_sp = compute_bidir_astar_euclidean(env.road_graph, vgtg.road_vtx_id, env.ground_transit_graph.vertices[gts_tup.idx].road_vtx_id, env.road_graph_wts, env.location_list)
 
-                                idx_ctr += 1
-                                new_vert = AerialMAPFState(idx=idx_ctr, ground_transit_idx=gts_tup.idx, timeval=gts_tup.timeval, distval=gts_tup.distval, considered_cars=v.considered_cars)
+                        true_timeval = gts_tup.timeval
+                        true_distval = gts_tup.distval
+                        
+                        # Compute the true connection cost between them
+                        # if length(bidir_sp.path) > 1
+                        #     true_distval = v.distval + bidir_sp.dist
+                        #     true_timeval = max(v.timeval + bidir_sp.dist/AvgSpeed, gts_tup.timeval)
+                        # end
 
-                                # if gts_tup.idx in avoid_gtg_vertex_set
-                                #     @infiltrate
-                                # end
+                        temp_gval = env.alpha_weight_distance*true_distval + (1.0 - env.alpha_weight_distance)*true_timeval
 
-                                Graphs.add_vertex!(env.aerial_mapf_graph, new_vert)
-                                push!(nbrs, idx_ctr)
-                                
-                                env.gtg_idx_gval[gts_tup.idx] = temp_gval
-                            end
-                        end # gts_vert in gts_subseq
-                    end
+                        if ~haskey(env.gtg_idx_gval, gts_tup.idx) || temp_gval < env.gtg_idx_gval[gts_tup.idx]
+
+                            idx_ctr += 1
+                            new_vert = AerialMAPFState(idx=idx_ctr, ground_transit_idx=gts_tup.idx, timeval=true_timeval, distval=true_distval, considered_cars=v.considered_cars)
+
+                            Graphs.add_vertex!(env.aerial_mapf_graph, new_vert)
+                            push!(nbrs, idx_ctr)
+                            
+                            env.gtg_idx_gval[gts_tup.idx] = temp_gval
+                        end
+                    end # isnothing(gts_tup)
                 end
             end # (gstart, gend) in gtg_ground_path_start_ends
         end # vgtg.ground_agent_id != ugtg.ground_agent_id
@@ -553,54 +567,139 @@ end
 # Also need to update wait times for cars
 # IMP: How to handle cars that were used by multiple drones???
 # Will also end up updating drone routes
-function update_aerial_ground_paths_cbs_solution!(env::CoordinatedMAPFEnv, solution::Vector{PR}, drone_flight_paths::Vector{Vector{Int64}}) where {PR <: PlanResult}
+function update_aerial_ground_paths_cbs_solution!(env::CoordinatedMAPFEnv, solution::Vector{PlanResult{AerialMAPFState,GroundTransitAction,Float64}}, drone_flight_paths::Vector{AgentPathInfo}) 
 
-    aerial_paths = Vector{AgentPathInfo}(undef, length(solution))
+    final_aerial_paths = Vector{AgentPathInfo}(undef, length(solution))
+    ground_paths = env.ground_paths
 
     # Iterate over solution
     for (aerial_agent_id, aerial_soln) in enumerate(solution)
 
-        path_states = AgentPathState[]
-
         # Direct flight path
         if length(aerial_soln.states) == 2
-            flight_path = drone_flight_paths[aerial_agent_id]
-            for idx in flight_path
-                push!(path_states, AgentPathState(road_vtx_id=idx))
-            end
+            # Just copy over drone flight paths
+            final_aerial_paths[aerial_agent_id] = drone_flight_paths[aerial_agent_id]
         else
+            # Iterate over drone car usage
+            # If time val of boarding is greater than drone's timestamp, edit drone path
+            # If time val of drone is greater than car vertex then edit car path
+            # TODO define function to do this update
+            path_states = AgentPathState[]
+            running_time = 0.0
+            running_dist = 0.0
 
             for i = 1:length(aerial_soln.states) - 1
 
-                # First add i
                 si, sip = (aerial_soln.states[i][1], aerial_soln.states[i+1][1])
-                push!(path_states, AgentPathState(road_vtx_id=si.road_vtx_id, coord_agent_id=si.ground_agent_id))
 
-                # First update car route if si is a car vertex
-                if si.ground_agent_id != 0
-                    
-                    @assert env.ground_paths[si.ground_agent_id].path_states[si.vertex_along_path].road_vtx_id == si.road_vtx_id "ROAD VTX ID mismatch"  # TODO: Remove later
-                    
-                    env.ground_paths[si.ground_agent_id].path_states[si.vertex_along_path].coord_agent_id = aerial_agent_id
+                si_gtg = env.ground_transit_graph.vertices[si.ground_transit_idx]
+                sip_gtg = env.ground_transit_graph.vertices[sip.ground_transit_idx]
+
+                push!(path_states, AgentPathState(road_vtx_id=si_gtg.road_vtx_id, timeval=running_time, coord_agent_id=si_gtg.ground_agent_id))
+
+                # Two cases: transit or transfer 
+                # Case 1 - flight expanded path between vertices (first or last hop)
+                if si_gtg.ground_agent_id != sip_gtg.ground_agent_id
+
+                    if haskey(env.ground_transit_expanded_paths, (si_gtg.idx, sip_gtg.idx))
+
+                        running_dist += env.ground_transit_weights[(si_gtg.idx, sip_gtg.idx)]
+                        
+                        # Add expanded paths up to last but one
+                        exp_path = env.ground_transit_expanded_paths[(si_gtg.idx, sip_gtg.idx)]
+                        for idx = 2:length(exp_path)-1
+                            running_time += env.road_graph_wts[exp_path[idx-1], exp_path[idx]] / AvgSpeed
+                            push!(path_states, AgentPathState(road_vtx_id=exp_path[idx], timeval=running_time))
+                        end
+                        running_time += env.road_graph_wts[exp_path[end-1], exp_path[end]] / AvgSpeed
+                    else
+                        # Actually run bidir_eucl for transfer and add path states
+                        bidir_sp = compute_bidir_astar_euclidean(env.road_graph, si_gtg.road_vtx_id, sip_gtg.road_vtx_id, env.road_graph_wts, env.location_list)
+                        # @infiltrate
+
+                        if isempty(bidir_sp.path)
+
+                            # Just add flight path; don't need to add any states
+                            flight_dist = distance_lat_lon_euclidean(env.location_list[si_gtg.road_vtx_id], env.location_list[sip_gtg.road_vtx_id])
+                            running_dist += flight_dist
+                            running_time += flight_dist / AvgSpeed
+
+                        elseif length(bidir_sp.path) > 1
+
+                            running_dist += bidir_sp.dist
+                            exp_path = bidir_sp.path
+                            for idx = 2:length(exp_path)-1
+                                running_time += env.road_graph_wts[exp_path[idx-1], exp_path[idx]] / AvgSpeed
+                                push!(path_states, AgentPathState(road_vtx_id=exp_path[idx], timeval=running_time))
+                            end
+                            running_time += env.road_graph_wts[exp_path[end-1], exp_path[end]] / AvgSpeed
+
+                        end
+                    end # haskey(env.ground_transit_expanded_paths, (si_gtg.idx, sip_gtg.idx))
+
+                    # Do some extra work if last is 
+                    if sip_gtg.ground_agent_id != 0
+
+                        # Big TODO
+                        # If running time is more than car, update car
+                        # If running time is less than car, update running time
+                        if sip_gtg.timeval < running_time
+
+                            # @infiltrate
+
+                            ground_route_running_time = running_time
+
+                            # Continue until subsumed by existing time...may go all the way to end
+                            for gtg_idx = sip_gtg.idx : env.gtg_ground_path_start_ends[sip_gtg.ground_agent_id][2]-1
+
+                                gtg_vtx = env.ground_transit_graph.vertices[gtg_idx]
+                                if gtg_vtx.timeval >= ground_route_running_time
+                                    break
+                                end
+
+                                # Compute difference to next one BEFORE updating ground route running time
+                                time_to_incr = env.ground_transit_graph.vertices[gtg_idx+1].timeval - env.ground_transit_graph.vertices[gtg_idx].timeval
+
+                                # Edit timeval for BOTH GTS and ground paths at vertex along path
+                                env.ground_transit_graph.vertices[gtg_idx].timeval = ground_route_running_time
+                                env.ground_paths[sip_gtg.ground_agent_id].path_states[gtg_vtx.vertex_along_path].timeval = ground_route_running_time
+
+                                # Update ground route running time by difference
+                                ground_route_running_time += time_to_incr
+
+                            end
+
+                            env.ground_transit_graph.vertices[env.gtg_ground_path_start_ends[sip_gtg.ground_agent_id][2]].timeval = ground_route_running_time
+                            env.ground_paths[sip_gtg.ground_agent_id].path_states[end].timeval = ground_route_running_time
+
+                            
+                            # @infiltrate
+                            
+                        else
+                            # TODO: Infiltrate and check
+                            # @infiltrate
+                            running_time = sip_gtg.timeval
+                        end # if sip_gtg.timeval < running_time
+                    end # sip_gtg.ground_agent_id != 0
+                else
+                    # Transfer, just update running time
+                    running_time += sip_gtg.timeval - si_gtg.timeval
                 end
-
-                # Now check if i -> i+1 is an expanded flight path
-                if haskey(env.ground_transit_expanded_paths, (si.road_vtx_id, sip.road_vtx_id))
-
-                    @assert si.ground_agent_id != sip.ground_agent_id   # TODO : Remove assert later
-                    exp_path = env.ground_transit_expanded_paths[(si.road_vtx_id, sip.road_vtx_id)]
-
-                    # Add intermediate vertices; necessarily flight
-                    for idx in exp_path[2:end-1]
-                        push!(path_states, AgentPathState(road_vtx_id=idx))
-                    end
-
-                end # haskey(expanded_paths)
             end # i = 1: length(states) - 1
-            push!(path_states, AgentPathState(road_vtx_id=aerial_soln.states[end][1].road_vtx_id))
-        end # length(states) == or != 2
 
-        aerial_paths[aerial_agent_id] = AgentPathInfo(path_states=path_states, cost_to_agent=aerial_soln.cost)
+            # Add last state
+            push!(path_states, AgentPathState(road_vtx_id = env.aerial_task_list[aerial_agent_id].dest, timeval=running_time))
+
+            final_aerial_paths[aerial_agent_id] = AgentPathInfo(path_states=path_states, total_dist=running_dist, total_time=running_time)
+
+        end # length(states) == or != 2
     end # enumerate(solution)
-    env.aerial_paths = aerial_paths
+    
+    env.aerial_paths = final_aerial_paths
+
+    # Update total time of ground paths
+    for (i, gp) in enumerate(env.ground_paths)
+        env.ground_paths[i].total_time = gp.path_states[end].timeval
+    end
+
 end
