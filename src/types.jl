@@ -15,10 +15,9 @@ end
 
 
 const AgentTask = NamedTuple{(:origin, :dest), Tuple{Int64, Int64}}
-
 const AvgSpeed = 8.0  # 8 m/s for drones and cars 
-
 const MaxHop = 3
+const CarCapacity = 2
 
 
 @enum ActionType Fly=1 Stay=2
@@ -27,8 +26,8 @@ struct GroundTransitAction <: MAPFAction
 end
 
 @with_kw struct GroundTransitConflict <: MAPFConflict
-    overlap_gtg_vertices::Set{Int64}          # Which TRANSIT GRAPH vertex IDs are in the conflicting set
-    aerial_agent_ids::Tuple{Int64,Int64}
+    overlap_gtg_vertices::Vector{Set{Int64}}          # Which TRANSIT GRAPH vertex IDs are in the conflicting set
+    aerial_agent_ids::Vector{Tuple{Int64,Int64}}
 end
 
 @with_kw struct GroundTransitConstraint <: MAPFConstraints
@@ -107,6 +106,7 @@ end
     road_graph::LightGraphs.AbstractGraph
     road_graph_wts::AbstractMatrix{Float64}
     location_list::Vector{Location2D}
+    alpha_weight_distance::Float64
     ground_paths::Vector{AgentPathInfo} = AgentPathInfo[]
     aerial_paths::Vector{AgentPathInfo} = AgentPathInfo[]
     ground_transit_graph::SimpleVListGraph{GroundTransitState} = SimpleVListGraph{GroundTransitState}()
@@ -119,7 +119,6 @@ end
     next_amapfg_goal_idx::Int64=0
     num_global_conflicts::Int64 = 0
     threshold_global_conflicts::Int64   = typemax(Int64)
-    alpha_weight_distance::Float64 = 0.8
     gtg_idx_gval::Dict{Int64, Float64} = Dict{Int64, Float64}()
     edge_to_copy_info::Dict{LightGraphs.Edge, EdgeCopyInfo} = Dict{LightGraphs.Edge, EdgeCopyInfo}()
     ground_mapf_graph::SimpleVListGraph{GroundMAPFState} = SimpleVListGraph{GroundMAPFState}()

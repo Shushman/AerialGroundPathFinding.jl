@@ -33,6 +33,9 @@ MultiAgentPathFinding.get_empty_constraint(::Type{GroundTransitConstraint}) = Gr
 
 function MultiAgentPathFinding.get_first_conflict(env::CoordinatedMAPFEnv, solution::Vector{PlanResult{AerialMAPFState,GroundTransitAction,Float64}})
 
+    all_pairs = Tuple{Int64,Int64}[]
+    all_overlap_verts = Set{Int64}[]
+
     for (i, sol_i) in enumerate(solution[1:end-1])
         for (j, sol_j) in enumerate(solution[i+1:end])
 
@@ -53,28 +56,42 @@ function MultiAgentPathFinding.get_first_conflict(env::CoordinatedMAPFEnv, solut
             end
 
             # If any overlap verts, there is a conflict
-            if !isempty(pair_overlap_verts)
-                env.num_global_conflicts += 1
-                println("Aerial CBS conflict number $(env.num_global_conflicts)")
-                if env.num_global_conflicts > env.threshold_global_conflicts
-                    throw(DomainError("Too many conflicts!"))
-                end
-                return GroundTransitConflict(pair_overlap_verts, (i, i+j))
+            # if !isempty(pair_overlap_verts)
+            #     env.num_global_conflicts += 1
+            #     println("Aerial CBS conflict number $(env.num_global_conflicts)")
+            #     if env.num_global_conflicts > env.threshold_global_conflicts
+            #         throw(DomainError("Too many conflicts!"))
+            #     end
+            #     return GroundTransitConflict(pair_overlap_verts, (i, i+j))
+            # end
+            if ~isempty(pair_overlap_verts)
+                push!(all_pairs, (i, i+j))
+                push!(all_overlap_verts, pair_overlap_verts)
             end
         end
     end
 
-    return nothing
-end
+    if ~isempty(all_pairs)
+        env.num_global_conflicts += 1
+        println("Aerial CBS conflict number $(env.num_global_conflicts)")
+        # @infiltrate
+        return GroundTransitConflict(all_overlap_verts, all_pairs)
+    else
+        return nothing
+
+    end
+end # function get_first_conflict
 
 function MultiAgentPathFinding.create_constraints_from_conflict(env::CoordinatedMAPFEnv, conflict::GroundTransitConflict)
 
-    constraint = Dict(conflict.aerial_agent_ids[1]=>GroundTransitConstraint(conflict.overlap_gtg_vertices), conflict.aerial_agent_ids[2]=> GroundTransitConstraint(conflict.overlap_gtg_vertices))
-    # println("High level conflict number $(env.num_global_conflicts)!")
-    # @show constraint
-    # @infiltrate
+    # constraint = Dict(conflict.aerial_agent_ids[1]=>GroundTransitConstraint(conflict.overlap_gtg_vertices), conflict.aerial_agent_ids[2]=> GroundTransitConstraint(conflict.overlap_gtg_vertices))
 
-    return [constraint]
+    constraints = Dict{Int64,GroundTransitConstraint}[]
+    for (pair_ids, overlap_verts) in zip(conflict.aerial_agent_ids, conflict.overlap_gtg_vertices)
+        push!(constraints, Dict(pair_ids[1] => GroundTransitConstraint(overlap_verts), pair_ids[2] => GroundTransitConstraint(overlap_verts)))
+    end
+
+    return constraints
 end
 
 # Look at current ground paths and generate the transit graph over which the drones will plan
