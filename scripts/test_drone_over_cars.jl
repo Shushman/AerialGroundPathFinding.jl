@@ -13,11 +13,11 @@ const MANHATTAN_WEIGHTFILE = "../data/manhattan_sparse_wts.jld2"
 const SANFRANCISCO_NODEFILE = "../data/sanfrancisco_node_attribs.json"
 const SANFRANCISCO_WEIGHTFILE = "../data/sanfrancisco_sparse_wts.jld2"
 
-const NCARS = 20
+const NCARS = 10
 const NDRONES = 30
 const ECBS_WEIGHT = 1.5
 const ALPHA_WEIGHT_DISTANCE = 0.8
-const CAPACITY = 4
+const CAPACITY = 10
 
 
 function main(graph_weights::AbstractMatrix, loc_list_file::String, num_cars::Int64, num_drones::Int64, seed::Int64)
@@ -55,9 +55,9 @@ end
 
 augment_road_graph_with_aerial_paths!(env, dir_drone_paths)
 
-gmapf_solver = CBSSolver{GroundMAPFState,GroundMAPFAction,Float64,SumOfCosts,GroundMAPFConflict,GroundMAPFConstraint,CoordinatedMAPFEnv}(env=env)
+gmapf_solver = ECBSSolver{GroundMAPFState,GroundMAPFAction,Float64,SumOfCosts,GroundMAPFConflict,GroundMAPFConstraint,CoordinatedMAPFEnv}(env=env, weight=ECBS_WEIGHT)
 
-initial_gmapf_states = [GroundMAPFState(task.origin, 0) for task in env.ground_task_list]
+initial_gmapf_states = [GroundMAPFState(task.origin, false) for task in env.ground_task_list]
 
 @time gmapf_soln = search!(gmapf_solver, initial_gmapf_states)
 println("$(env.num_global_conflicts) conflicts in ground CBS")
@@ -69,6 +69,8 @@ drone_dists = [ddp.total_dist for ddp in dir_drone_paths]
 @time set_ground_transit_graph!(env, drone_dists)
 
 println("Size of GTG: $(length(env.ground_transit_graph.vertices))")
+
+
 env.num_global_conflicts = 0
 solver = ECBSSolver{AerialMAPFState,GroundTransitAction,Float64,SumOfCosts,GroundTransitConflict,GroundTransitConstraint,CoordinatedMAPFEnv}(env=env, weight=ECBS_WEIGHT)
 

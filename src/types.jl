@@ -60,20 +60,26 @@ end
 ## Types for ground MAPF
 @with_kw struct GroundMAPFState <: MAPFState
     road_vtx_id::Int64
-    aerial_id::Int64
+    is_aerial::Bool
 end
-Base.isequal(s1::GroundMAPFState, s2::GroundMAPFState) = (s1.road_vtx_id == s2.road_vtx_id && s1.aerial_id == s2.aerial_id)
+Base.isequal(s1::GroundMAPFState, s2::GroundMAPFState) = (s1.road_vtx_id == s2.road_vtx_id && s1.is_aerial == s2.is_aerial)
+
+@with_kw mutable struct GMAPFStateInfo
+    idx::Int64
+    gval::Float64
+    aerial_ids::Set{Int64}
+end
 
 # What is the drone ID for the edge it is taking? (0 if standard)
 @with_kw struct GroundMAPFAction <: MAPFAction
     edge_id::LightGraphs.Edge
-    edge_aerial_id::Int64
+    edge_aerial_ids::Set{Int64}
 end
 
 # Two or more cars that traverse the same edge for a particular drone ID
 @with_kw struct GroundMAPFConflict <: MAPFConflict
     ground_id_pair::Tuple{Int64,Int64}
-    conflicting_edge_aerial_ids::Vector{Tuple{LightGraphs.Edge,Int64}}
+    conflicting_edge_aerial_ids::Vector{Tuple{LightGraphs.Edge,Set{Int64}}}
 end
 
 # Constraint is to avoid a particular copy of the edge
@@ -122,7 +128,7 @@ end
     gtg_idx_gval::Dict{Int64, Float64} = Dict{Int64, Float64}()
     edge_to_copy_info::Dict{LightGraphs.Edge, EdgeCopyInfo} = Dict{LightGraphs.Edge, EdgeCopyInfo}()
     ground_mapf_graph::SimpleVListGraph{GroundMAPFState} = SimpleVListGraph{GroundMAPFState}()
-    unique_gmapf_states::Dict{GroundMAPFState,Tuple{Int64,Float64}} = Dict{GroundMAPFState,Tuple{Int64,Float64}}()
+    unique_gmapf_states::Dict{GroundMAPFState,GMAPFStateInfo} = Dict{GroundMAPFState,Tuple{Int64,Float64}}()
     next_gmapfg_goal_idx::Int64 = 0
 end
 

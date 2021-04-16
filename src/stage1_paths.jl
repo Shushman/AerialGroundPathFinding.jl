@@ -86,15 +86,13 @@ function augment_road_graph_with_aerial_paths!(env::CoordinatedMAPFEnv, direct_d
             end # ~(isempty(edge_copy_queue))
         end # i = 1:length(ddp_states) - 1
 
-        # @infiltrate
-
         # now iterate over edge_copy_min_hop and add copies
         for (src_dst, hop) in edge_copy_min_hop
 
             e = LightGraphs.Edge(src_dst[1], src_dst[2])
 
             # Initialize dictionary for edge if it doesn't exist
-            if ~haskey(env.edge_to_copy_info, src_dst)
+            if ~haskey(env.edge_to_copy_info, e)
                 env.edge_to_copy_info[e] = EdgeCopyInfo()
             end
 
@@ -132,22 +130,24 @@ function MultiAgentPathFinding.overlap_between_constraints(cbase::GroundMAPFCons
     return false
 end
 
-get_mapf_ground_action(u::GroundMAPFState, v::GroundMAPFState) = GroundMAPFAction(LightGraphs.Edge(u.road_vtx_id, v.road_vtx_id), v.aerial_id)
+get_mapf_ground_action(env::CoordinatedMAPFEnv, u::GroundMAPFState, v::GroundMAPFState) = GroundMAPFAction(LightGraphs.Edge(u.road_vtx_id, v.road_vtx_id), env.unique_gmapf_states[v].aerial_ids)
 
 
 MultiAgentPathFinding.get_empty_constraint(::Type{GroundMAPFConstraint}) = GroundMAPFConstraint()
 
+# TODO
 function MultiAgentPathFinding.create_constraints_from_conflict(env::CoordinatedMAPFEnv, conflict::GroundMAPFConflict)
 
     # Iterate over conflicting edge Ids and create one element sets of edges to avoid of a drone ID
     edge_set_to_avoid = Dict{LightGraphs.Edge,Set{Int64}}()
-    for (edge, aerial_id) in conflict.conflicting_edge_aerial_ids
-        edge_set_to_avoid[edge] = Set{Int64}(aerial_id)
+    for (edge, aerial_ids) in conflict.conflicting_edge_aerial_ids
+        edge_set_to_avoid[edge] = aerial_ids
     end
 
     # Now just repeat the constraint for each member of pair
     gid_pair = conflict.ground_id_pair
     constraint = Dict{Int64,GroundMAPFConstraint}(gid_pair[1] => GroundMAPFConstraint(edge_set_to_avoid), gid_pair[2] => GroundMAPFConstraint(edge_set_to_avoid))
+    # @infiltrate
     return [constraint]
 end
 
@@ -159,22 +159,23 @@ function MultiAgentPathFinding.get_first_conflict(env::CoordinatedMAPFEnv, solut
         for (j, sol_j) in enumerate(solution[i+1:end])
 
             other_ground_id = i+j
-            overlapping_aerial_edges = Vector{Tuple{LightGraphs.Edge,Int64}}(undef, 0)
+            overlapping_aerial_edges = Vector{Tuple{LightGraphs.Edge,Set{Int64}}}(undef, 0)
 
             for (i_action, _) in sol_i.actions
                 for (j_action, _) in sol_j.actions
-                    if i_action.edge_aerial_id != 0 && i_action == j_action
-                        push!(overlapping_aerial_edges, (i_action.edge_id, i_action.edge_aerial_id))
+                    if i_action.edge_id == j_action.edge_id && ~isempty(i_action.edge_aerial_ids) && i_action.edge_aerial_ids == j_action.edge_aerial_ids
+                        push!(overlapping_aerial_edges, (i_action.edge_id, i_action.edge_aerial_ids))
                     end # i_action.edge_aerial_id != 0 && i_action == j_action
                 end # (sj, (state_j, _)) in enumerate(sol_j.states[2:end])
             end # (si, (state_i, _)) in enumerate(sol_i.states[2:end])
 
-            # NOTE: We need a more strict conflict criterion
-            if ~(isempty(overlapping_aerial_edges))
+            # NOTE: Think carefully about conflict criterion
+            if length(overlapping_aerial_edges) > div(min(length(sol_i.actions), length(sol_j.actions)), 3)
                 env.num_global_conflicts += 1
                 if env.num_global_conflicts > env.threshold_global_conflicts
                     throw(DomainError("Too many conflicts!"))
                 end
+                # @infiltrate
                 return GroundMAPFConflict((i, other_ground_id), overlapping_aerial_edges)
             end
         end # (j, sol_j) in enumerate(solution[i+1:end])
@@ -187,22 +188,66 @@ function ground_mapf_heuristic(env::CoordinatedMAPFEnv, road_vtx_goal::Int64, u:
     return distance_lat_lon_euclidean(env.location_list[u.road_vtx_id], env.location_list[road_vtx_goal])
 end
 
-function ground_mapf_edge_weight(env::CoordinatedMAPFEnv, u::GroundMAPFState, v::GroundMAPFState)
-    if v.aerial_id == 0
+function generate_ground_mapf_edge_weight(env::CoordinatedMAPFEnv, u::GroundMAPFState, v::GroundMAPFState, aerial_ids::Set{Int64})
+    if isempty(aerial_ids)
         return env.road_graph_wts[u.road_vtx_id, v.road_vtx_id]
     else
+        # Subtract cost from aerial IDs carried
+        base_wt = env.road_graph_wts[u.road_vtx_id, v.road_vtx_id]
         uv_edge = LightGraphs.Edge(u.road_vtx_id, v.road_vtx_id)
-        return env.edge_to_copy_info[uv_edge].aerial_id_to_weight[v.aerial_id]
+        cumul_wt = base_wt
+
+        # Subtract cost diff from base for each drone edge
+        for aid in aerial_ids
+            # if !haskey(env.edge_to_copy_info[uv_edge].aerial_id_to_weight, aid)
+            #     @infiltrate
+            # end
+            cumul_wt -= (base_wt - env.edge_to_copy_info[uv_edge].aerial_id_to_weight[aid])
+        end
+        # @infiltrate
+        return cumul_wt
     end
+end
+
+function get_ground_mapf_edge_weight(env::CoordinatedMAPFEnv, u::GroundMAPFState, v::GroundMAPFState)
+    return (env.unique_gmapf_states[v].gval - env.unique_gmapf_states[u].gval) 
 end
 
 
 function MultiAgentPathFinding.set_low_level_context!(::CoordinatedMAPFEnv, ::Int64, ::GroundMAPFConstraint)
 end
 
+function MultiAgentPathFinding.focal_heuristic(env::CoordinatedMAPFEnv, solution::Vector{PlanResult{GroundMAPFState,GroundMAPFAction,Float64}})
+    
+    num_potential_conflicts = 0
+    
+    for (i, sol_i) in enumerate(solution[1:end-1])
+        for (j, sol_j) in enumerate(solution[i+1:end])
+
+            other_ground_id = i+j
+            num_overlapping_aerial_edges = 0
+
+            for (i_action, _) in sol_i.actions
+                for (j_action, _) in sol_j.actions
+                    if i_action.edge_id == j_action.edge_id && ~isempty(i_action.edge_aerial_ids) && i_action.edge_aerial_ids == j_action.edge_aerial_ids
+                        num_overlapping_aerial_edges += 1
+                    end # i_action.edge_aerial_id != 0 && i_action == j_action
+                end # (sj, (state_j, _)) in enumerate(sol_j.states[2:end])
+            end # (si, (state_i, _)) in enumerate(sol_i.states[2:end])
+
+            # NOTE: Think carefully about conflict criterion
+            if num_overlapping_aerial_edges > div(min(length(sol_i.actions), length(sol_j.actions)), 3)
+                num_potential_conflicts += 1
+            end
+        end # (j, sol_j) in enumerate(solution[i+1:end])
+    end # (i, sol_i) in enumerate(solution[1:end-1])
+
+    return num_potential_conflicts
+end
+
 
 # Search over augmented road graph
-function MultiAgentPathFinding.low_level_search!(solver::CBSSolver, ground_agent_id::Int64, s::GroundMAPFState, constraint::GroundMAPFConstraint)
+function MultiAgentPathFinding.low_level_search!(solver::ECBSSolver, ground_agent_id::Int64, s::GroundMAPFState, constraint::GroundMAPFConstraint, solution::Vector{PlanResult{GroundMAPFState,GroundMAPFAction,Float64}})
 
     env = solver.env
 
@@ -211,11 +256,11 @@ function MultiAgentPathFinding.low_level_search!(solver::CBSSolver, ground_agent
     empty!(env.unique_gmapf_states)
     
     Graphs.add_vertex!(env.ground_mapf_graph, s)
-    env.unique_gmapf_states[s] = (1, 0.0)
+    env.unique_gmapf_states[s] = GMAPFStateInfo(1, 0.0, Set{Int64}())
     
     road_vtx_goal = env.ground_task_list[ground_agent_id].dest
     admissible_heuristic(u) = ground_mapf_heuristic(env, road_vtx_goal, u)
-    edge_wt_fn(u, v) = ground_mapf_edge_weight(env, u, v)
+    edge_wt_fn(u, v) = get_ground_mapf_edge_weight(env, u, v)
 
     vis = GroundMAPFGoalVisitor(env, road_vtx_goal, constraint.avoid_edge_copy_set)
 
@@ -247,7 +292,7 @@ function MultiAgentPathFinding.low_level_search!(solver::CBSSolver, ground_agent
         new_state = deepcopy(env.ground_mapf_graph.vertices[v_idx])
         push!(states, (new_state, a_star_states.dists[v_idx]))
 
-        push!(actions, (get_mapf_ground_action(env.ground_mapf_graph.vertices[u_idx], env.ground_mapf_graph.vertices[v_idx]), a_star_states.dists[v_idx] - a_star_states.dists[u_idx]))
+        push!(actions, (get_mapf_ground_action(env, env.ground_mapf_graph.vertices[u_idx], env.ground_mapf_graph.vertices[v_idx]), a_star_states.dists[v_idx] - a_star_states.dists[u_idx]))
     end
 
     # @infiltrate
@@ -271,7 +316,7 @@ function Graphs.include_vertex!(vis::GroundMAPFGoalVisitor, u::GroundMAPFState, 
 
     # When we expand actual goal, exit
     if v.road_vtx_id == road_vtx_goal
-        env.next_gmapfg_goal_idx = env.unique_gmapf_states[v][1]
+        env.next_gmapfg_goal_idx = env.unique_gmapf_states[v].idx
         return false
     end
 
@@ -283,7 +328,9 @@ function Graphs.include_vertex!(vis::GroundMAPFGoalVisitor, u::GroundMAPFState, 
     for onbr in outneighbors(env.road_graph, v.road_vtx_id)
 
         vnbr_edge = LightGraphs.Edge(v.road_vtx_id, onbr)
-        id_to_add_with = 0
+        aids_to_add_with = Set{Int64}()
+        is_aerial = false
+        v_aids = env.unique_gmapf_states[v].aerial_ids
 
         if haskey(env.edge_to_copy_info, vnbr_edge)
             
@@ -292,44 +339,55 @@ function Graphs.include_vertex!(vis::GroundMAPFGoalVisitor, u::GroundMAPFState, 
             aerial_ids_to_avoid = get(avoid_edge_copy_set, vnbr_edge, Set{Int64}())
             aerial_ids_to_consider = setdiff(Set{Int64}(keys(edge_copies_id_to_wt)), aerial_ids_to_avoid)
 
-            # Find min weight edge of aerial_ids_to_consider
-            # If IDS to consider is empty, then don't add anything
+            # Find lowest weight edges up to min(capacity, aerial_ids)
             if ~(isempty(aerial_ids_to_consider))
-                minweight = Inf
-                aerial_id = 0
 
-                for aid in aerial_ids_to_consider
-                    if edge_copies_id_to_wt[aid] < minweight
-                        aerial_id = aid
-                        minweight = edge_copies_id_to_wt[aid]
+                # NOTE: First prefer what it is already carrying
+                union!(aids_to_add_with, intersect(v_aids, aerial_ids_to_consider))
+
+                # Then remove from aerial_ids_to_consider
+                setdiff!(aerial_ids_to_consider, v_aids)
+                
+                # Now choose best remaining
+                if ~(isempty(aerial_ids_to_consider))
+                    sorted_wt_edges = [(aid, edge_copies_id_to_wt[aid]) for aid in aerial_ids_to_consider]
+                    sort!(sorted_wt_edges, by=x->x[2])
+                    
+                    n_aids = min(length(sorted_wt_edges), env.car_capacity-length(aids_to_add_with))
+                    for (aid, wt) in sorted_wt_edges[1:n_aids]
+                        push!(aids_to_add_with, aid)
                     end
                 end
 
-                # Guaranteed to have something
-                id_to_add_with = aerial_id
+                if ~isempty(aids_to_add_with)
+                    is_aerial = true
+                end
             end
         end
 
         # Check if id_to_add_with is already in ground_mapf_graph
-        new_vert = GroundMAPFState(onbr, id_to_add_with)
-        gval = d + ground_mapf_edge_weight(env, v, new_vert)
+        new_vert = GroundMAPFState(onbr, is_aerial)
+        gval = d + generate_ground_mapf_edge_weight(env, v, new_vert, aids_to_add_with)
         if ~(haskey(env.unique_gmapf_states, new_vert))
             idx_ctr += 1
             Graphs.add_vertex!(env.ground_mapf_graph, new_vert)
             push!(nbrs, idx_ctr)
-            env.unique_gmapf_states[new_vert] = (idx_ctr, gval)
+            env.unique_gmapf_states[new_vert] = GMAPFStateInfo(idx_ctr, gval, aids_to_add_with)  
         else
             # Only add updated if gval improves
-            if gval < env.unique_gmapf_states[new_vert][2]
-                idx = env.unique_gmapf_states[new_vert][1]
-                push!(nbrs, idx)
-                env.unique_gmapf_states[new_vert] = (idx, gval)
-                # @infiltrate
+            # NOTE: Should only happen for aerial-aerial or drone-drone
+            if gval < env.unique_gmapf_states[new_vert].gval
+                push!(nbrs, env.unique_gmapf_states[new_vert].idx)
+                env.unique_gmapf_states[new_vert].gval = gval
+                env.unique_gmapf_states[new_vert].aerial_ids = aids_to_add_with
             end
         end
     end # onbr in out_neighbors(v.road_vtx_id, env.road_graph)
 
     # @show length(env.ground_mapf_graph.vertices)
+    # if length(env.ground_mapf_graph.vertices) > 100000
+    #     @infiltrate
+    # end
 
     return true
 end

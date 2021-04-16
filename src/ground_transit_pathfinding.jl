@@ -67,7 +67,7 @@ function MultiAgentPathFinding.get_first_conflict(env::CoordinatedMAPFEnv, solut
             end
 
             env.num_global_conflicts += 1
-            # println("Aerial CBS conflict number $(env.num_global_conflicts)")
+            println("Aerial CBS conflict number $(env.num_global_conflicts)")
             # @infiltrate
             return GroundTransitConflict(overlap_vertices, running_agent_set)
         end
@@ -93,7 +93,7 @@ function MultiAgentPathFinding.create_constraints_from_conflict(env::Coordinated
         push!(constraints, constraint)
     end
 
-    # @infiltrate
+    @infiltrate
     return constraints
 end
 
@@ -241,20 +241,24 @@ function MultiAgentPathFinding.focal_heuristic(env::CoordinatedMAPFEnv, solution
 
     num_potential_conflicts = 0
 
-    for (i, sol_i) in enumerate(solution[1:end-1])
-        for (j, sol_j) in enumerate(solution[i+1:end])
+    gtg_idx_to_aerial_ids = Dict{Int64,Int64}()
 
-            for (si, _) in sol_i.states[2:end-1]
-                for (sj, _) in sol_j.states[2:end-1]
-
-                    si_gtg = env.ground_transit_graph.vertices[si.ground_transit_idx]
-                    sj_gtg = env.ground_transit_graph.vertices[sj.ground_transit_idx]
-
-                    if si_gtg.ground_agent_id == sj_gtg.ground_agent_id && si_gtg.vertex_along_path == sj_gtg.vertex_along_path && si_gtg.ground_agent_id != 0
-                        num_potential_conflicts += 1
-                    end
+    for (i, sol_i) in enumerate(solution)
+        for ((si, _), (sip,_)) in zip(sol_i.states[1:end-1], sol_i.states[2:end])
+            si_gtg = env.ground_transit_graph.vertices[si.ground_transit_idx]
+            sip_gtg = env.ground_transit_graph.vertices[sip.ground_transit_idx]
+            if si_gtg.ground_agent_id !=0 && si_gtg.ground_agent_id == sip_gtg.ground_agent_id
+                if ~haskey(gtg_idx_to_aerial_ids, si_gtg.idx)
+                    gtg_idx_to_aerial_ids[si_gtg.idx] = 0
                 end
+                gtg_idx_to_aerial_ids[si_gtg.idx] = gtg_idx_to_aerial_ids[si_gtg.idx] + 1
             end
+        end
+    end
+
+    for v in values(gtg_idx_to_aerial_ids)
+        if v > env.car_capacity
+            num_potential_conflicts += 1
         end
     end
 
