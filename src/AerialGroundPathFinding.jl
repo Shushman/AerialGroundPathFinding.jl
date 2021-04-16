@@ -12,6 +12,7 @@ using SparseArrays
 using JSON
 using DataStructures
 using StatsFuns
+using IterTools
 
 using Graphs
 using LightGraphs

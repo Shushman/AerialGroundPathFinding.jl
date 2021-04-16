@@ -17,7 +17,6 @@ end
 const AgentTask = NamedTuple{(:origin, :dest), Tuple{Int64, Int64}}
 const AvgSpeed = 8.0  # 8 m/s for drones and cars 
 const MaxHop = 3
-const CarCapacity = 2
 
 
 @enum ActionType Fly=1 Stay=2
@@ -26,8 +25,8 @@ struct GroundTransitAction <: MAPFAction
 end
 
 @with_kw struct GroundTransitConflict <: MAPFConflict
-    overlap_gtg_vertices::Vector{Set{Int64}}          # Which TRANSIT GRAPH vertex IDs are in the conflicting set
-    aerial_agent_ids::Vector{Tuple{Int64,Int64}}
+    overlap_gtg_vertices::Set{Int64}          # Which TRANSIT GRAPH vertex IDs are in the conflicting set
+    aerial_agent_ids::Vector{Int64}
 end
 
 @with_kw struct GroundTransitConstraint <: MAPFConstraints
@@ -107,6 +106,7 @@ end
     road_graph_wts::AbstractMatrix{Float64}
     location_list::Vector{Location2D}
     alpha_weight_distance::Float64
+    car_capacity::Int64
     ground_paths::Vector{AgentPathInfo} = AgentPathInfo[]
     aerial_paths::Vector{AgentPathInfo} = AgentPathInfo[]
     ground_transit_graph::SimpleVListGraph{GroundTransitState} = SimpleVListGraph{GroundTransitState}()

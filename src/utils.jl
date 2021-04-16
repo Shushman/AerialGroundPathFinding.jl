@@ -145,3 +145,11 @@ function get_tasks_with_valid_path(road_graph::LightGraphs.AbstractGraph, road_g
 
     return task_list
 end
+
+function compute_total_cost(env::CoordinatedMAPFEnv, ground_paths::Vector{AgentPathInfo}, aerial_paths::Vector{AgentPathInfo})
+
+    total_dist = sum(ap.total_dist for ap in aerial_paths) + sum(gp.total_dist for gp in ground_paths)
+    total_time = sum(ap.total_time for ap in aerial_paths) + sum(gp.total_time for gp in ground_paths)
+
+    return env.alpha_weight_distance*total_dist + (1.0-env.alpha_weight_distance)*total_time
+end

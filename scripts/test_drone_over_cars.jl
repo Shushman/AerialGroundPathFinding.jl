@@ -13,10 +13,11 @@ const MANHATTAN_WEIGHTFILE = "../data/manhattan_sparse_wts.jld2"
 const SANFRANCISCO_NODEFILE = "../data/sanfrancisco_node_attribs.json"
 const SANFRANCISCO_WEIGHTFILE = "../data/sanfrancisco_sparse_wts.jld2"
 
-const NCARS = 5
-const NDRONES = 6
+const NCARS = 20
+const NDRONES = 30
 const ECBS_WEIGHT = 1.5
 const ALPHA_WEIGHT_DISTANCE = 0.8
+const CAPACITY = 4
 
 
 function main(graph_weights::AbstractMatrix, loc_list_file::String, num_cars::Int64, num_drones::Int64, seed::Int64)
@@ -33,7 +34,7 @@ function main(graph_weights::AbstractMatrix, loc_list_file::String, num_cars::In
     aerial_task_list = get_tasks_with_valid_path(graph, graph_weights, location_list, num_drones, rng)
 
     # Create environment
-    env = CoordinatedMAPFEnv(ground_task_list=ground_task_list, aerial_task_list=aerial_task_list, road_graph=graph, road_graph_wts=graph_weights, location_list=location_list, alpha_weight_distance=ALPHA_WEIGHT_DISTANCE)
+    env = CoordinatedMAPFEnv(ground_task_list=ground_task_list, aerial_task_list=aerial_task_list, road_graph=graph, road_graph_wts=graph_weights, location_list=location_list, alpha_weight_distance=ALPHA_WEIGHT_DISTANCE, car_capacity=CAPACITY)
 
     # Compute drone paths and costs
     direct_drone_paths = compute_independent_paths(env, env.aerial_task_list)
@@ -74,7 +75,7 @@ solver = ECBSSolver{AerialMAPFState,GroundTransitAction,Float64,SumOfCosts,Groun
 
 @time initial_states = [AerialMAPFState(idx=1, ground_transit_idx=sg[1]) for (i, sg) in enumerate(env.gtg_drone_start_goal_idxs)]
 
-aerial_solution = search!(solver, initial_states)
+@time aerial_solution = search!(solver, initial_states)
 println("$(env.num_global_conflicts) conflicts in aerial CBS")
 
 # println("Done")

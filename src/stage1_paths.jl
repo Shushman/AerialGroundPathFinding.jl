@@ -20,9 +20,6 @@ function compute_independent_paths(env::CoordinatedMAPFEnv, task_list::Vector{Ag
     return independent_paths
 end
 
-
-
-
 struct EdgeCopyQueueType
     hop::Int64
     src::Int64
@@ -112,52 +109,6 @@ function augment_road_graph_with_aerial_paths!(env::CoordinatedMAPFEnv, direct_d
 end # function augment_road_graph_with_aerial_paths!
 
 
-
-
-# # TODO : Redo to reflect time
-# function aerial_ground_coord_path_cost(env::CoordinatedMAPFEnv, aerial_id::Int64, ground_id::Int64)
-
-#     aerial_task = env.aerial_task_list[aerial_id]
-#     ground_path_states = env.ground_paths[ground_id].path_states
-
-#     path_idxs = length(ground_path_states)
-#     to_costs = Vector{Float64}(undef, path_idxs-1)
-#     from_costs = Vector{Float64}(undef, path_idxs-1)
-
-#     # Compute to_costs from origin to ground_path[i]
-#     # Compute from_costs from ground_path[i+1] to dest
-#     for i = 1:path_idxs-1
-
-#         bidir_sp_to = compute_bidir_astar_euclidean(env.road_graph, aerial_task.origin, ground_path_states[i].road_vtx_id, env.road_graph_wts, env.location_list)
-        
-#         to_tval = max(bidir_sp_to.dist/AvgSpeed, ground_path_states[i].timeval)
-#         to_costs[i] = env.alpha_weight_distance*bidir_sp_to.dist + (1.0 - env.alpha_weight_distance)*to_tval
-
-#         bidir_sp_from = compute_bidir_astar_euclidean(env.road_graph, ground_path_states[i+1].road_vtx_id, aerial_task.dest, env.road_graph_wts, env.location_list)
-        
-#         from_tval = bidir_sp_from.dist/AvgSpeed
-#         from_costs[i] = env.alpha_weight_distance*bidir_sp_from.dist + (1.0 - env.alpha_weight_distance)*from_tval
-
-#     end
-
-#     best_cost = Inf
-#     best_segment = (0, 0)
-#     # Find best_start and best_end
-#     # Add to and from costs with the time to ride between stops
-#     for i = 1:path_idxs-1
-#         for j = i:path_idxs-1
-#             if to_costs[i] + from_costs[j] < best_cost
-#                 best_cost = to_costs[i] + from_costs[j] + (1.0 - env.alpha_weight_distance)*(ground_path_states[j].timeval - ground_path_states[i].timeval)
-#                 best_segment = (i, j)
-#             end
-#         end
-#     end
-
-#     return best_cost, best_segment
-# end # function aerial_ground_coord_path_cost
-
-
-
 # Define MAPF functions for ground paths
 ## Solve the subproblem of finding aerial paths over the ground transit network
 function MultiAgentPathFinding.add_constraint!(cbase::GroundMAPFConstraint, cadd::GroundMAPFConstraint)
@@ -183,9 +134,6 @@ end
 
 get_mapf_ground_action(u::GroundMAPFState, v::GroundMAPFState) = GroundMAPFAction(LightGraphs.Edge(u.road_vtx_id, v.road_vtx_id), v.aerial_id)
 
-# Don't need next two fns
-# MultiAgentPathFinding.get_mapf_state_from_idx(env::CoordinatedMAPFEnv, idx::Int64) = GroundMAPFState(idx)
-# MultiAgentPathFinding.get_mapf_action(env::CoordinatedMAPFEnv, u::Int64, v::Int64) = GroundMAPFAction(0)
 
 MultiAgentPathFinding.get_empty_constraint(::Type{GroundMAPFConstraint}) = GroundMAPFConstraint()
 
@@ -213,12 +161,11 @@ function MultiAgentPathFinding.get_first_conflict(env::CoordinatedMAPFEnv, solut
             other_ground_id = i+j
             overlapping_aerial_edges = Vector{Tuple{LightGraphs.Edge,Int64}}(undef, 0)
 
-            # TODO: Redo to directly use actions
             for (i_action, _) in sol_i.actions
                 for (j_action, _) in sol_j.actions
                     if i_action.edge_aerial_id != 0 && i_action == j_action
                         push!(overlapping_aerial_edges, (i_action.edge_id, i_action.edge_aerial_id))
-                    end # i_action == j_action
+                    end # i_action.edge_aerial_id != 0 && i_action == j_action
                 end # (sj, (state_j, _)) in enumerate(sol_j.states[2:end])
             end # (si, (state_i, _)) in enumerate(sol_i.states[2:end])
 
@@ -244,9 +191,7 @@ function ground_mapf_edge_weight(env::CoordinatedMAPFEnv, u::GroundMAPFState, v:
     if v.aerial_id == 0
         return env.road_graph_wts[u.road_vtx_id, v.road_vtx_id]
     else
-        # TODO: Remove assert
         uv_edge = LightGraphs.Edge(u.road_vtx_id, v.road_vtx_id)
-        # @assert haskey(env.edge_to_copy_info, uv_edge) && haskey(env.edge_to_copy_info[uv_edge].aerial_id_to_weight, v.aerial_id)
         return env.edge_to_copy_info[uv_edge].aerial_id_to_weight[v.aerial_id]
     end
 end
@@ -415,10 +360,43 @@ function update_ground_paths_with_ground_mapf_result!(env::CoordinatedMAPFEnv, s
     end
 end
 
-function compute_total_cost(env::CoordinatedMAPFEnv, ground_paths::Vector{AgentPathInfo}, aerial_paths::Vector{AgentPathInfo})
+# function aerial_ground_coord_path_cost(env::CoordinatedMAPFEnv, aerial_id::Int64, ground_id::Int64)
 
-    total_dist = sum(ap.total_dist for ap in aerial_paths) + sum(gp.total_dist for gp in ground_paths)
-    total_time = sum(ap.total_time for ap in aerial_paths) + sum(gp.total_time for gp in ground_paths)
+#     aerial_task = env.aerial_task_list[aerial_id]
+#     ground_path_states = env.ground_paths[ground_id].path_states
 
-    return env.alpha_weight_distance*total_dist + (1.0-env.alpha_weight_distance)*total_time
-end
+#     path_idxs = length(ground_path_states)
+#     to_costs = Vector{Float64}(undef, path_idxs-1)
+#     from_costs = Vector{Float64}(undef, path_idxs-1)
+
+#     # Compute to_costs from origin to ground_path[i]
+#     # Compute from_costs from ground_path[i+1] to dest
+#     for i = 1:path_idxs-1
+
+#         bidir_sp_to = compute_bidir_astar_euclidean(env.road_graph, aerial_task.origin, ground_path_states[i].road_vtx_id, env.road_graph_wts, env.location_list)
+        
+#         to_tval = max(bidir_sp_to.dist/AvgSpeed, ground_path_states[i].timeval)
+#         to_costs[i] = env.alpha_weight_distance*bidir_sp_to.dist + (1.0 - env.alpha_weight_distance)*to_tval
+
+#         bidir_sp_from = compute_bidir_astar_euclidean(env.road_graph, ground_path_states[i+1].road_vtx_id, aerial_task.dest, env.road_graph_wts, env.location_list)
+        
+#         from_tval = bidir_sp_from.dist/AvgSpeed
+#         from_costs[i] = env.alpha_weight_distance*bidir_sp_from.dist + (1.0 - env.alpha_weight_distance)*from_tval
+
+#     end
+
+#     best_cost = Inf
+#     best_segment = (0, 0)
+#     # Find best_start and best_end
+#     # Add to and from costs with the time to ride between stops
+#     for i = 1:path_idxs-1
+#         for j = i:path_idxs-1
+#             if to_costs[i] + from_costs[j] < best_cost
+#                 best_cost = to_costs[i] + from_costs[j] + (1.0 - env.alpha_weight_distance)*(ground_path_states[j].timeval - ground_path_states[i].timeval)
+#                 best_segment = (i, j)
+#             end
+#         end
+#     end
+
+#     return best_cost, best_segment
+# end # function aerial_ground_coord_path_cost
