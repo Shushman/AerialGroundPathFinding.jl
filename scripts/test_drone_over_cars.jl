@@ -72,7 +72,7 @@ println("Size of GTG: $(length(env.ground_transit_graph.vertices))")
 
 
 env.num_global_conflicts = 0
-solver = ECBSSolver{AerialMAPFState,GroundTransitAction,Float64,SumOfCosts,GroundTransitConflict,GroundTransitConstraint,CoordinatedMAPFEnv}(env=env, weight=ECBS_WEIGHT)
+solver = CBSSolver{AerialMAPFState,GroundTransitAction,Float64,SumOfCosts,GroundTransitConflict,GroundTransitConstraint,CoordinatedMAPFEnv}(env=env)
 
 
 @time initial_states = [AerialMAPFState(idx=1, ground_transit_idx=sg[1]) for (i, sg) in enumerate(env.gtg_drone_start_goal_idxs)]

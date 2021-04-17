@@ -30,7 +30,7 @@ end
 end
 
 @with_kw struct GroundTransitConstraint <: MAPFConstraints
-    avoid_gtg_vertex_set::Set{Int64}    = Set{Int64}()
+    avoid_gid_vertex_set::Set{Int64}    = Set{Int64}()
 end
 Base.isempty(gtc::GroundTransitConstraint) = isempty(gtc.avoid_gtg_vertex_set)
 
