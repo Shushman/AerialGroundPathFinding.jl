@@ -93,7 +93,7 @@ Base.isempty(gpc::GroundMAPFConstraint) = isempty(gpc.avoid_edge_copy_set)
 @with_kw mutable struct AgentPathState
     road_vtx_id::Int64
     timeval::Float64
-    coord_agent_id::Int64 = 0     # Of the other type
+    coord_agent_id::Set{Int64} = Set{Int64}()     # Of the other type
 end
 @with_kw mutable struct AgentPathInfo
     path_states::Vector{AgentPathState} = AgentPathState[]

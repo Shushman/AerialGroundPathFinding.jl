@@ -150,3 +150,23 @@ function compute_total_cost(env::CoordinatedMAPFEnv, ground_paths::Vector{AgentP
 
     return env.alpha_weight_distance*total_dist + (1.0-env.alpha_weight_distance)*total_time
 end
+
+function count_cars_not_coordinating(ground_paths::Vector{AgentPathInfo})
+
+    not_coord_ids = Set{Int64}()
+
+    for (gid, gpath) in enumerate(ground_paths)
+
+        is_coord = false
+        for gps in gpath.path_states
+            if ~isempty(gps.coord_agent_id)
+                is_coord = true
+                break
+            end
+        end
+        if ~is_coord
+            push!(not_coord_ids, gid)
+        end
+    end
+    return not_coord_ids
+end

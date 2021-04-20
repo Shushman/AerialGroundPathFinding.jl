@@ -45,7 +45,8 @@ export
     get_tasks_with_valid_path,
     augment_road_graph_with_aerial_paths!,
     update_ground_paths_with_ground_mapf_result!,
-    compute_total_cost
+    compute_total_cost,
+    count_cars_not_coordinating
 
 
 include("types.jl")

@@ -170,7 +170,8 @@ function MultiAgentPathFinding.get_first_conflict(env::CoordinatedMAPFEnv, solut
             end # (si, (state_i, _)) in enumerate(sol_i.states[2:end])
 
             # NOTE: Think carefully about conflict criterion
-            if length(overlapping_aerial_edges) > div(min(length(sol_i.actions), length(sol_j.actions)), 3)
+            if ~isempty(overlapping_aerial_edges)
+            # if length(overlapping_aerial_edges) > div(min(length(sol_i.actions), length(sol_j.actions)), 3)
                 env.num_global_conflicts += 1
                 if env.num_global_conflicts > env.threshold_global_conflicts
                     throw(DomainError("Too many conflicts!"))
@@ -236,7 +237,7 @@ function MultiAgentPathFinding.focal_heuristic(env::CoordinatedMAPFEnv, solution
             end # (si, (state_i, _)) in enumerate(sol_i.states[2:end])
 
             # NOTE: Think carefully about conflict criterion
-            if num_overlapping_aerial_edges > div(min(length(sol_i.actions), length(sol_j.actions)), 3)
+            if num_overlapping_aerial_edges > 0
                 num_potential_conflicts += 1
             end
         end # (j, sol_j) in enumerate(solution[i+1:end])
@@ -383,11 +384,6 @@ function Graphs.include_vertex!(vis::GroundMAPFGoalVisitor, u::GroundMAPFState, 
             end
         end
     end # onbr in out_neighbors(v.road_vtx_id, env.road_graph)
-
-    # @show length(env.ground_mapf_graph.vertices)
-    # if length(env.ground_mapf_graph.vertices) > 100000
-    #     @infiltrate
-    # end
 
     return true
 end
