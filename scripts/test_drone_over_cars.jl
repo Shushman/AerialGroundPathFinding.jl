@@ -14,7 +14,7 @@ const SANFRANCISCO_NODEFILE = "../data/sanfrancisco_node_attribs.json"
 const SANFRANCISCO_WEIGHTFILE = "../data/sanfrancisco_sparse_wts.jld2"
 
 const NCARS = 10
-const NDRONES = 30
+const NDRONES = 40
 const ECBS_WEIGHT = 1.5
 const ALPHA_WEIGHT_DISTANCE = 0.8
 const CAPACITY = 10
@@ -82,6 +82,13 @@ println("$(env.num_global_conflicts) conflicts in aerial CBS")
 
 # println("Done")
 update_aerial_ground_paths_cbs_solution!(env, aerial_solution, dir_drone_paths)
+
+# Postprocessing; redirect cars not helping to direct paths
+not_coord_ids = count_cars_not_coordinating(env.ground_paths)
+@show not_coord_ids
+for ncid in not_coord_ids
+    env.ground_paths[ncid] = dir_car_paths[ncid]
+end
 
 total_dir_cost = compute_total_cost(env, dir_drone_paths, dir_car_paths)
 total_coord_cost = compute_total_cost(env, env.aerial_paths, env.ground_paths)
