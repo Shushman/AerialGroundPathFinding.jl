@@ -34,7 +34,7 @@ MultiAgentPathFinding.get_empty_constraint(::Type{GroundTransitConstraint}) = Gr
 function MultiAgentPathFinding.get_first_conflict(env::CoordinatedMAPFEnv, solution::Vector{PlanResult{AerialMAPFState,GroundTransitAction,Float64}})
 
     # Maps GTG indices to which drones are boarding or on vehicle there
-    gtg_idx_to_aerial_ids = SortedDict{Int64,Vector{Int64}}()
+    gtg_idx_to_aerial_ids = Dict{Int64,Vector{Int64}}()
 
     for (i, sol_i) in enumerate(solution)
         for ((si, _), (sip,_)) in zip(sol_i.states[1:end-1], sol_i.states[2:end])
@@ -50,27 +50,31 @@ function MultiAgentPathFinding.get_first_conflict(env::CoordinatedMAPFEnv, solut
     end
 
     # Now iterate over keys of gtg_idx_to_aerial_ids in order
-    # Whenever we hit a key with more than 2 drones, continue until fewer than 2 OR non-consec IDXs
-    sorted_keys = collect(keys(gtg_idx_to_aerial_ids))
-    for (i, key) in enumerate(sorted_keys)
+    # Whenever we hit a key with more than capacity drones, continue until fewer than capacity OR non-consec IDXs
+    gid_to_aerial_ids = Dict{Int64,Vector{Int64}}()
+    for (gtgidx, aerial_ids) in gtg_idx_to_aerial_ids
 
-        running_agent_set = gtg_idx_to_aerial_ids[key]
-
-        if length(running_agent_set) > env.car_capacity
-            overlap_vertices = Set{Int64}(key)
+        if length(aerial_ids) > env.car_capacity
+            
+            gid = env.ground_transit_graph.vertices[gtgidx].ground_agent_id
 
             # Now just continue until different running agent set
-            for next_idx in sorted_keys[i+1:end]
-                if gtg_idx_to_aerial_ids[next_idx] == running_agent_set
-                    push!(overlap_vertices, next_idx)
-                end
+            if ~haskey(gid_to_aerial_ids, gid)
+                gid_to_aerial_ids[gid] = aerial_ids
             end
-
-            env.num_global_conflicts += 1
-            println("Aerial CBS conflict number $(env.num_global_conflicts)")
-            # @infiltrate
-            return GroundTransitConflict(overlap_vertices, running_agent_set)
         end
+    end
+
+    if ~isempty(gid_to_aerial_ids)
+
+        env.num_global_conflicts += 1
+        # println("Aerial CBS conflict number $(env.num_global_conflicts)")
+        
+        overlap_gids = collect(keys(gid_to_aerial_ids))
+        aerial_agent_ids = collect(values(gid_to_aerial_ids))
+
+        # @infiltrate
+        return GroundTransitConflict(overlap_gids, aerial_agent_ids)
     end
 
     return nothing
@@ -81,26 +85,23 @@ function MultiAgentPathFinding.create_constraints_from_conflict(env::Coordinated
     # constraint = Dict(conflict.aerial_agent_ids[1]=>GroundTransitConstraint(conflict.overlap_gtg_vertices), conflict.aerial_agent_ids[2]=> GroundTransitConstraint(conflict.overlap_gtg_vertices))
 
     # Generate all NC2 
-    constraints = Vector{Dict{Int64,GroundTransitConstraint}}(undef, 0)
+    aerial_gids_to_avoid = Dict{Int64,Set{Int64}}()
 
     # Get all car IDs from overlap_gtg_vertices
-    gid_set = Set{Int64}()
-    for gtg in conflict.overlap_gtg_vertices
-        push!(gid_set, env.ground_transit_graph.vertices[gtg].ground_agent_id)
+    for (gid, aids) in zip(conflict.overlap_gids, conflict.aerial_agent_ids)
+        for aid in aids
+            if ~haskey(aerial_gids_to_avoid, aid)
+                aerial_gids_to_avoid[aid] = Set{Int64}(gid)
+            else
+                push!(aerial_gids_to_avoid[aid], gid)
+            end
+        end
     end
 
-    # Excess agents is size of conflict.aerial_agent_ids - 2
-    n_excess = length(conflict.aerial_agent_ids) - env.car_capacity
-    for agt_subset in subsets(conflict.aerial_agent_ids, n_excess)
-        constraint = Dict{Int64,GroundTransitConstraint}()
-        for aid in agt_subset
-            constraint[aid] = GroundTransitConstraint(gid_set)
-        end
-        push!(constraints, constraint)
-    end
+    constraint = Dict{Int64,GroundTransitConstraint}(aid => GroundTransitConstraint(gids) for (aid,gids) in aerial_gids_to_avoid)
 
     # @infiltrate
-    return constraints
+    return [constraint]
 end
 
 # Look at current ground paths and generate the transit graph over which the drones will plan
@@ -559,7 +560,12 @@ function update_aerial_ground_paths_cbs_solution!(env::CoordinatedMAPFEnv, solut
                 si_gtg = env.ground_transit_graph.vertices[si.ground_transit_idx]
                 sip_gtg = env.ground_transit_graph.vertices[sip.ground_transit_idx]
 
-                push!(path_states, AgentPathState(road_vtx_id=si_gtg.road_vtx_id, timeval=running_time, coord_agent_id=si_gtg.ground_agent_id))
+                push!(path_states, AgentPathState(road_vtx_id=si_gtg.road_vtx_id, timeval=running_time, coord_agent_id=Set{Int64}(si_gtg.ground_agent_id)))
+
+                # Update ground path coord_id for drone
+                if si_gtg.ground_agent_id != 0
+                    push!(env.ground_paths[si_gtg.ground_agent_id].path_states[si_gtg.vertex_along_path].coord_agent_id, aerial_agent_id)
+                end
 
                 # Two cases: transit or transfer 
                 # Case 1 - flight expanded path between vertices (first or last hop)

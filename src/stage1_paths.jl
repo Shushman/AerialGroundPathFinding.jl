@@ -148,6 +148,7 @@ function MultiAgentPathFinding.create_constraints_from_conflict(env::Coordinated
     gid_pair = conflict.ground_id_pair
     constraint = Dict{Int64,GroundMAPFConstraint}(gid_pair[1] => GroundMAPFConstraint(edge_set_to_avoid), gid_pair[2] => GroundMAPFConstraint(edge_set_to_avoid))
     # @infiltrate
+    # @show constraint
     return [constraint]
 end
 
@@ -169,10 +170,10 @@ function MultiAgentPathFinding.get_first_conflict(env::CoordinatedMAPFEnv, solut
                 end # (sj, (state_j, _)) in enumerate(sol_j.states[2:end])
             end # (si, (state_i, _)) in enumerate(sol_i.states[2:end])
 
-            # NOTE: Think carefully about conflict criterion
+            # NOTE: Any overlap blows up at 15 cars
             if ~isempty(overlapping_aerial_edges)
-            # if length(overlapping_aerial_edges) > div(min(length(sol_i.actions), length(sol_j.actions)), 3)
                 env.num_global_conflicts += 1
+                # println("Ground conflict no. $(env.num_global_conflicts)")
                 if env.num_global_conflicts > env.threshold_global_conflicts
                     throw(DomainError("Too many conflicts!"))
                 end
@@ -389,7 +390,6 @@ function Graphs.include_vertex!(vis::GroundMAPFGoalVisitor, u::GroundMAPFState, 
 end
 
 
-
 # Incorporate time and true distance info here
 function update_ground_paths_with_ground_mapf_result!(env::CoordinatedMAPFEnv, solution::Vector{PlanResult{GroundMAPFState,GroundMAPFAction,Float64}})
     
@@ -414,43 +414,4 @@ function update_ground_paths_with_ground_mapf_result!(env::CoordinatedMAPFEnv, s
     end
 end
 
-# function aerial_ground_coord_path_cost(env::CoordinatedMAPFEnv, aerial_id::Int64, ground_id::Int64)
-
-#     aerial_task = env.aerial_task_list[aerial_id]
-#     ground_path_states = env.ground_paths[ground_id].path_states
-
-#     path_idxs = length(ground_path_states)
-#     to_costs = Vector{Float64}(undef, path_idxs-1)
-#     from_costs = Vector{Float64}(undef, path_idxs-1)
-
-#     # Compute to_costs from origin to ground_path[i]
-#     # Compute from_costs from ground_path[i+1] to dest
-#     for i = 1:path_idxs-1
-
-#         bidir_sp_to = compute_bidir_astar_euclidean(env.road_graph, aerial_task.origin, ground_path_states[i].road_vtx_id, env.road_graph_wts, env.location_list)
-        
-#         to_tval = max(bidir_sp_to.dist/AvgSpeed, ground_path_states[i].timeval)
-#         to_costs[i] = env.alpha_weight_distance*bidir_sp_to.dist + (1.0 - env.alpha_weight_distance)*to_tval
-
-#         bidir_sp_from = compute_bidir_astar_euclidean(env.road_graph, ground_path_states[i+1].road_vtx_id, aerial_task.dest, env.road_graph_wts, env.location_list)
-        
-#         from_tval = bidir_sp_from.dist/AvgSpeed
-#         from_costs[i] = env.alpha_weight_distance*bidir_sp_from.dist + (1.0 - env.alpha_weight_distance)*from_tval
-
-#     end
-
-#     best_cost = Inf
-#     best_segment = (0, 0)
-#     # Find best_start and best_end
-#     # Add to and from costs with the time to ride between stops
-#     for i = 1:path_idxs-1
-#         for j = i:path_idxs-1
-#             if to_costs[i] + from_costs[j] < best_cost
-#                 best_cost = to_costs[i] + from_costs[j] + (1.0 - env.alpha_weight_distance)*(ground_path_states[j].timeval - ground_path_states[i].timeval)
-#                 best_segment = (i, j)
-#             end
-#         end
-#     end
-
-#     return best_cost, best_segment
-# end # function aerial_ground_coord_path_cost
+## For prioritized planning

@@ -170,3 +170,11 @@ function count_cars_not_coordinating(ground_paths::Vector{AgentPathInfo})
     end
     return not_coord_ids
 end
+
+function get_increasing_dist_ordering(agent_paths::Vector{AgentPathInfo})
+
+    id_dist_tuples = [(id, path.total_dist) for (id, path) in enumerate(agent_paths)]
+    sort!(id_dist_tuples, by=x->x[2], rev=true)
+
+    return [idd[1] for idd in id_dist_tuples]
+end

@@ -15,7 +15,7 @@ end
 
 
 const AgentTask = NamedTuple{(:origin, :dest), Tuple{Int64, Int64}}
-const AvgSpeed = 8.0  # 8 m/s for drones and cars 
+const AvgSpeed = 10.0  # 6 m/s for drones and cars 
 const MaxHop = 3
 
 
@@ -25,14 +25,22 @@ struct GroundTransitAction <: MAPFAction
 end
 
 @with_kw struct GroundTransitConflict <: MAPFConflict
-    overlap_gtg_vertices::Set{Int64}          # Which TRANSIT GRAPH vertex IDs are in the conflicting set
-    aerial_agent_ids::Vector{Int64}
+    overlap_gids::Vector{Int64}          # Which ground IDs are overburdened
+    aerial_agent_ids::Vector{Vector{Int64}}
 end
 
 @with_kw struct GroundTransitConstraint <: MAPFConstraints
     avoid_gid_vertex_set::Set{Int64}    = Set{Int64}()
 end
-Base.isempty(gtc::GroundTransitConstraint) = isempty(gtc.avoid_gtg_vertex_set)
+Base.isempty(gtc::GroundTransitConstraint) = isempty(gtc.avoid_gid_vertex_set)
+MultiAgentPathFinding.get_empty_constraint(::Type{GroundTransitConstraint}) = GroundTransitConstraint()
+
+@with_kw struct GroundTransitVertexConstraint <: MAPFConstraints
+    avoid_gtg_vertex_set::Set{Int64} = Set{Int64}()
+end
+Base.isempty(gtvc::GroundTransitVertexConstraint) = isempty(gtvc.avoid_gtg_vertex_set)
+MultiAgentPathFinding.get_empty_constraint(::Type{GroundTransitVertexConstraint}) = GroundTransitVertexConstraint()
+
 
 
 # For the graph of ground time-stamped waypoints
@@ -88,7 +96,7 @@ end
     avoid_edge_copy_set::Dict{LightGraphs.Edge,Set{Int64}} = Dict{LightGraphs.Edge,Set{Int64}}()
 end
 Base.isempty(gpc::GroundMAPFConstraint) = isempty(gpc.avoid_edge_copy_set)
-
+MultiAgentPathFinding.get_empty_constraint(::Type{GroundMAPFConstraint}) = GroundMAPFConstraint()
 
 @with_kw mutable struct AgentPathState
     road_vtx_id::Int64
@@ -130,6 +138,7 @@ end
     ground_mapf_graph::SimpleVListGraph{GroundMAPFState} = SimpleVListGraph{GroundMAPFState}()
     unique_gmapf_states::Dict{GroundMAPFState,GMAPFStateInfo} = Dict{GroundMAPFState,Tuple{Int64,Float64}}()
     next_gmapfg_goal_idx::Int64 = 0
+    gtg_idx_to_aerial_ids::Dict{Int64,Vector{Int64}} = Dict{Int64,Vector{Int64}}()
 end
 
 ## NOTES
