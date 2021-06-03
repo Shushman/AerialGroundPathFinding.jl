@@ -6,6 +6,7 @@ using JSON
 using BenchmarkTools
 using MultiAgentPathFinding
 
+
 using AerialGroundPathFinding
 
 const BASE_SEED = 6789
@@ -14,12 +15,12 @@ const MANHATTAN_WEIGHTFILE = "../data/manhattan_sparse_wts.jld2"
 
 # Only caring about distance for now
 const ALPHA_WEIGHT_DISTANCE = 1.0
-const CAPACITY = 5
 
 const NCARS = parse(Int64, ARGS[1])
 const NDRONES = parse(Int64, ARGS[2])
 const OUTFILEDIR = ARGS[3]
-const TRIALS = parse(Int64, ARGS[4])
+const CAPACITY = parse(Int64, ARGS[4])
+const TRIALS = parse(Int64, ARGS[5])
 
 function main()
 
@@ -79,8 +80,8 @@ function main()
         res_dict = Dict{String,Float64}("compute_time" => sum(time_comps), "total_path_cost" => total_dist)
 
         if t > 1
-            println("Trial $(t-1)")
-            fname = string(OUTFILEDIR, "Cars_", NCARS, "_Drones_", NDRONES, "_trial_", (t-1), ".json")
+            fname = string(OUTFILEDIR, "_Cars_", NCARS, "_Drones_", NDRONES, "_Capacity_", CAPACITY, "_Trial_", (t-1), ".json")
+            println(fname)
             open(fname, "w") do f
                 JSON.print(f, res_dict, 2)
             end

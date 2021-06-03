@@ -44,8 +44,8 @@ function main()
         res_dict = Dict{String,Float64}("compute_time" => (t1+t2), "total_path_cost" => total_dist)
 
         if t > 1
-            println("Trial $(t-1)")
-            fname = string(OUTFILEDIR, "Cars_", NCARS, "_Drones_", NDRONES, "_trial_", (t-1), ".json")
+            fname = string(OUTFILEDIR, "_Cars_", NCARS, "_Drones_", NDRONES, "_Trial_", (t-1), ".json")
+            println(fname)
             open(fname, "w") do f
                 JSON.print(f, res_dict, 2)
             end

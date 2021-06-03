@@ -69,6 +69,10 @@ function MultiAgentPathFinding.get_first_conflict(env::CoordinatedMAPFEnv, solut
 
         env.num_global_conflicts += 1
         # println("Aerial CBS conflict number $(env.num_global_conflicts)")
+
+        if env.num_global_conflicts > env.threshold_global_conflicts
+            throw(DomainError("Too many conflicts in Stage 2!"))
+        end
         
         overlap_gids = collect(keys(gid_to_aerial_ids))
         aerial_agent_ids = collect(values(gid_to_aerial_ids))

@@ -14,13 +14,14 @@ const MANHATTAN_WEIGHTFILE = "../data/manhattan_sparse_wts.jld2"
 
 # Only caring about distance for now
 const ALPHA_WEIGHT_DISTANCE = 1.0
-const CAPACITY = 5
 const ECBS_WEIGHT = 1.5
+const THRESHOLD_CONFLICTS = 500
 
 const NCARS = parse(Int64, ARGS[1])
 const NDRONES = parse(Int64, ARGS[2])
 const OUTFILEDIR = ARGS[3]
-const TRIALS = parse(Int64, ARGS[4])
+const CAPACITY = parse(Int64, ARGS[4])
+const TRIALS = parse(Int64, ARGS[5])
 
 function main()
 
@@ -36,7 +37,7 @@ function main()
         ground_task_list = get_tasks_with_valid_path(graph, manhattan_sparse_wts, location_list, NCARS, rng)
         aerial_task_list = get_tasks_with_valid_path(graph, manhattan_sparse_wts, location_list, NDRONES, rng)
 
-        env = CoordinatedMAPFEnv(ground_task_list=ground_task_list, aerial_task_list=aerial_task_list, road_graph=graph, road_graph_wts=manhattan_sparse_wts, location_list=location_list, alpha_weight_distance=ALPHA_WEIGHT_DISTANCE, car_capacity=CAPACITY)
+        env = CoordinatedMAPFEnv(ground_task_list=ground_task_list, aerial_task_list=aerial_task_list, road_graph=graph, road_graph_wts=manhattan_sparse_wts, location_list=location_list, alpha_weight_distance=ALPHA_WEIGHT_DISTANCE, car_capacity=CAPACITY, threshold_global_conflicts=THRESHOLD_CONFLICTS)
 
         time_comps = Float64[]
 
@@ -88,8 +89,8 @@ function main()
         res_dict = Dict("compute_time" => sum(time_comps), "total_path_cost" => total_dist, "ground_conflicts" => ground_conflicts, "aerial_conflicts" => aerial_conflicts)
 
         if t > 1
-            println("Trial $(t-1)")
-            fname = string(OUTFILEDIR, "Cars_", NCARS, "_Drones_", NDRONES, "_trial_", (t-1), ".json")
+            fname = string(OUTFILEDIR, "_Cars_", NCARS, "_Drones_", NDRONES, "_Capacity_", CAPACITY, "_Trial_", (t-1), ".json")
+            println(fname)
             open(fname, "w") do f
                 JSON.print(f, res_dict, 2)
             end
