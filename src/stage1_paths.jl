@@ -28,7 +28,7 @@ end
 # Use drone paths to augment road graph
 # For k hops from each drone path edge, annotate edges with drone ID and reduced weight
 # Where W' = W*logistic(k) where k is the shortest of hops from the drone path
-function augment_road_graph_with_aerial_paths!(env::CoordinatedMAPFEnv, direct_drone_paths::Vector{AgentPathInfo})
+function augment_road_graph_with_aerial_paths!(env::CoordinatedMAPFEnv, direct_drone_paths::Vector{AgentPathInfo}, decay_fn::Function = x -> logistic(x))
 
 
     # Iterate over drone paths
@@ -96,7 +96,7 @@ function augment_road_graph_with_aerial_paths!(env::CoordinatedMAPFEnv, direct_d
                 env.edge_to_copy_info[e] = EdgeCopyInfo()
             end
 
-            reduced_wt = env.road_graph_wts[e.src, e.dst] * logistic(hop)
+            reduced_wt = env.road_graph_wts[e.src, e.dst] * decay_fn(hop)
             env.edge_to_copy_info[e].aerial_id_to_weight[aerial_id] = reduced_wt
 
         end # (src_dst, hop) in edge_copy_min_hop

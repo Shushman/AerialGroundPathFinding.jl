@@ -44,7 +44,8 @@ function main()
         t2 = @elapsed dir_car_paths = compute_independent_paths(env, env.ground_task_list)
         push!(time_comps, t1+t2)
 
-        t3 = @elapsed augment_road_graph_with_aerial_paths!(env, dir_drone_paths)
+        # New decay function
+        t3 = @elapsed augment_road_graph_with_aerial_paths!(env, dir_drone_paths, x -> 0.5*(1 + tanh(x)))
         push!(time_comps, t3)
 
         initial_gmapf_states = [GroundMAPFState(task.origin, false) for task in env.ground_task_list]

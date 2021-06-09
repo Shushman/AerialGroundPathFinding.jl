@@ -216,38 +216,6 @@ end # function generate_ground_transit_graph
 
 
 # TODO: Review
-# Focal transition heuristic just counts boarding constraints
-function focal_transition_heuristic_transit(env::CoordinatedMAPFEnv, solution::Vector{PlanResult{AerialMAPFState,GroundTransitAction,Float64}}, aerial_agent_id::Int64, u::AerialMAPFState, v::AerialMAPFState) 
-
-    vgtg = env.ground_transit_graph.vertices[v.ground_transit_idx]
-
-    # Trivial check that it doesn't fly to goal
-    if vgtg.ground_agent_id == 0
-        return 0
-    end
-
-    num_conflicts = 0
-
-    # Target vertex is car vertex
-    for (i, aerial_soln) in enumerate(solution)
-        if i != aerial_agent_id && (~isempty(aerial_soln))
-
-            for (amapf_state, _) in aerial_soln.states[2:end-1]
-
-                vtx_state = env.ground_transit_graph.vertices[amapf_state.ground_transit_idx]
-                # Add if any other drone uses at any point
-                if vtx_state.ground_agent_id == vgtg.ground_agent_id && vtx_state.vertex_along_path == vgtg.vertex_along_path 
-                    num_conflicts += 1
-                    continue
-                end
-            end
-        end # if i && isempty
-    end # enumerate(solution)
-
-    return num_conflicts
-end
-
-# TODO: Review
 function MultiAgentPathFinding.focal_heuristic(env::CoordinatedMAPFEnv, solution::Vector{PlanResult{AerialMAPFState,GroundTransitAction,Float64}}) 
 
     num_potential_conflicts = 0
@@ -276,8 +244,70 @@ function MultiAgentPathFinding.focal_heuristic(env::CoordinatedMAPFEnv, solution
     return num_potential_conflicts
 end
 
-# Just use BFS here
-# function MultiAgentPathFinding.low_level_search!(solver::ECBSSolver, aerial_agent_id::Int64, s::AerialMAPFState, constraint::GroundTransitConstraint, solution::Vector{PlanResult{AerialMAPFState,GroundTransitAction,Float64}}) 
+# Just use BFS here: no good focal heuristic
+function MultiAgentPathFinding.low_level_search!(solver::ECBSSolver, aerial_agent_id::Int64, s::AerialMAPFState, constraint::GroundTransitConstraint, solution::Vector{PlanResult{AerialMAPFState,GroundTransitAction,Float64}})
+
+    ## TODO
+    env = solver.env
+
+    env.aerial_mapf_graph = SimpleVListGraph{AerialMAPFState}()
+    Graphs.add_vertex!(env.aerial_mapf_graph, s)
+
+    env.gtg_idx_gval =  Dict{Int64,Float64}()
+
+    edge_wt_fn(u, v) = amapfg_edge_wt_fn(env, u, v)
+    admissible_heuristic(u) = direct_flight_time_heuristic(env, u)
+
+    # Set start and goal
+    start_idx = 1   # Always one since graph reinitialized
+    env.next_gtg_goal_idx = env.gtg_drone_start_goal_idxs[aerial_agent_id][2]
+    env.next_amapfg_goal_idx = 0
+
+    vis = GroundTransitGoalVisitor(env, constraint.avoid_gid_vertex_set)
+
+    # println("Size of constraints: $(length(constraint.avoid_gid_vertex_set))")
+
+    a_star_states = a_star_implicit_shortest_path!(env.aerial_mapf_graph,
+                                                    edge_wt_fn,
+                                                    start_idx,
+                                                    vis,
+                                                    admissible_heuristic
+                                                    )
+    # println("Size of amapf_graph: $(length(env.aerial_mapf_graph.vertices))")
+    
+    # Get solution from a_star_eps_states
+    # NOTE: It should always have a solution because drone can just fly
+    @assert haskey(a_star_states.parent_indices, env.next_amapfg_goal_idx)
+
+    # Get path cost
+    states = Tuple{AerialMAPFState,Float64}[]
+    actions = Tuple{GroundTransitAction, Float64}[]
+
+    # Get path cost
+    sp_cost = a_star_states.dists[env.next_amapfg_goal_idx]
+
+    # Get path
+    sp_idxs = shortest_path_indices(a_star_states.parent_indices, env.aerial_mapf_graph, start_idx, env.next_amapfg_goal_idx)
+
+    push!(states, (s, 0.0))
+
+    # Traverse sp_idxs and set up states and actions
+    for i = 2:length(sp_idxs)
+
+        u, v =  (sp_idxs[i-1], sp_idxs[i])
+
+        # NOTE: Create new state because we are going to delete graph later
+        new_state = deepcopy(env.aerial_mapf_graph.vertices[v])
+        push!(states, (new_state, a_star_states.dists[v]))
+
+        # All derived info but can be useful
+        push!(actions, (get_mapf_action(env, u, v), a_star_states.dists[v] - a_star_states.dists[u]))
+    end
+
+
+    return PlanResult{AerialMAPFState,GroundTransitAction,Float64}(states, actions, sp_cost, sp_cost)
+end # function low_level_search
+
 
 function MultiAgentPathFinding.low_level_search!(solver::CBSSolver, aerial_agent_id::Int64, s::AerialMAPFState, constraint::GroundTransitConstraint) 
 

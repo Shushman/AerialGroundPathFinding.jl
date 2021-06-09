@@ -15,13 +15,14 @@ const MANHATTAN_WEIGHTFILE = "../data/manhattan_sparse_wts.jld2"
 # Only caring about distance for now
 const ALPHA_WEIGHT_DISTANCE = 1.0
 const ECBS_WEIGHT = 1.5
-const THRESHOLD_CONFLICTS = 500
+# const THRESHOLD_CONFLICTS = 100
 
 const NCARS = parse(Int64, ARGS[1])
 const NDRONES = parse(Int64, ARGS[2])
 const OUTFILEDIR = ARGS[3]
 const CAPACITY = parse(Int64, ARGS[4])
 const TRIALS = parse(Int64, ARGS[5])
+const THRESHOLD_CONFLICTS = parse(Int64, ARGS[6])
 
 function main()
 
@@ -52,9 +53,22 @@ function main()
 
         t4 = @elapsed gmapf_solver = ECBSSolver{GroundMAPFState,GroundMAPFAction,Float64,SumOfCosts,GroundMAPFConflict,GroundMAPFConstraint,CoordinatedMAPFEnv}(env=env, weight=ECBS_WEIGHT)
         push!(time_comps, t4)
-
-        t5 = @elapsed ground_cbs_soln = search!(gmapf_solver, initial_gmapf_states)
-        push!(time_comps, t5)
+        
+        ground_cbs_soln = PlanResult[]
+        try
+            t5 = @elapsed ground_cbs_soln = search!(gmapf_solver, initial_gmapf_states)
+            push!(time_comps, t5)
+        catch y
+            if isa(y, DomainError)
+                println("Too many conflicts in stage 1 of trial $(t-1)!")
+                continue
+            elseif  isa(y, BoundsError)
+                println("ECBS ran out of nodes in stage 1 of trial $(t-1)")
+                continue
+            else
+                throw(y)
+            end
+        end
 
         ground_conflicts = env.num_global_conflicts
 
@@ -68,11 +82,24 @@ function main()
 
         initial_amapf_states = [AerialMAPFState(idx=1, ground_transit_idx=sg[1]) for (i, sg) in enumerate(env.gtg_drone_start_goal_idxs)]
         
-        t8 = @elapsed aerial_mapf_solver = CBSSolver{AerialMAPFState,GroundTransitAction,Float64,SumOfCosts,GroundTransitConflict,GroundTransitConstraint,CoordinatedMAPFEnv}(env=env)
+        t8 = @elapsed aerial_mapf_solver = ECBSSolver{AerialMAPFState,GroundTransitAction,Float64,SumOfCosts,GroundTransitConflict,GroundTransitConstraint,CoordinatedMAPFEnv}(env=env, weight=ECBS_WEIGHT)
         push!(time_comps, t8)
 
-        t9 = @elapsed aerial_cbs_soln = search!(aerial_mapf_solver, initial_amapf_states)
-        push!(time_comps, t9)
+        aerial_cbs_soln = PlanResult[]
+        try
+            t9 = @elapsed aerial_cbs_soln = search!(aerial_mapf_solver, initial_amapf_states)
+            push!(time_comps, t9)
+        catch y
+            if isa(y, DomainError)
+                println("Too many conflicts in stage 2 of trial $(t-1)!")
+                continue
+            elseif  isa(y, BoundsError)
+                println("ECBS ran out of nodes in stage 2 of trial $(t-1)")
+                continue
+            else
+                throw(y)
+            end
+        end
 
         aerial_conflicts = env.num_global_conflicts
 
