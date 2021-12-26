@@ -15,9 +15,8 @@ end
 
 
 const AgentTask = NamedTuple{(:origin, :dest), Tuple{Int64, Int64}}
-const AvgSpeed = 8.0  # 8 m/s for drones and cars 
+const AvgSpeed = 10.0  # 6 m/s for drones and cars 
 const MaxHop = 3
-const CarCapacity = 2
 
 
 @enum ActionType Fly=1 Stay=2
@@ -26,14 +25,22 @@ struct GroundTransitAction <: MAPFAction
 end
 
 @with_kw struct GroundTransitConflict <: MAPFConflict
-    overlap_gtg_vertices::Vector{Set{Int64}}          # Which TRANSIT GRAPH vertex IDs are in the conflicting set
-    aerial_agent_ids::Vector{Tuple{Int64,Int64}}
+    overlap_gids::Vector{Int64}          # Which ground IDs are overburdened
+    aerial_agent_ids::Vector{Vector{Int64}}
 end
 
 @with_kw struct GroundTransitConstraint <: MAPFConstraints
-    avoid_gtg_vertex_set::Set{Int64}    = Set{Int64}()
+    avoid_gid_vertex_set::Set{Int64}    = Set{Int64}()
 end
-Base.isempty(gtc::GroundTransitConstraint) = isempty(gtc.avoid_gtg_vertex_set)
+Base.isempty(gtc::GroundTransitConstraint) = isempty(gtc.avoid_gid_vertex_set)
+MultiAgentPathFinding.get_empty_constraint(::Type{GroundTransitConstraint}) = GroundTransitConstraint()
+
+@with_kw struct GroundTransitVertexConstraint <: MAPFConstraints
+    avoid_gtg_vertex_set::Set{Int64} = Set{Int64}()
+end
+Base.isempty(gtvc::GroundTransitVertexConstraint) = isempty(gtvc.avoid_gtg_vertex_set)
+MultiAgentPathFinding.get_empty_constraint(::Type{GroundTransitVertexConstraint}) = GroundTransitVertexConstraint()
+
 
 
 # For the graph of ground time-stamped waypoints
@@ -61,20 +68,26 @@ end
 ## Types for ground MAPF
 @with_kw struct GroundMAPFState <: MAPFState
     road_vtx_id::Int64
-    aerial_id::Int64
+    is_aerial::Bool
 end
-Base.isequal(s1::GroundMAPFState, s2::GroundMAPFState) = (s1.road_vtx_id == s2.road_vtx_id && s1.aerial_id == s2.aerial_id)
+Base.isequal(s1::GroundMAPFState, s2::GroundMAPFState) = (s1.road_vtx_id == s2.road_vtx_id && s1.is_aerial == s2.is_aerial)
+
+@with_kw mutable struct GMAPFStateInfo
+    idx::Int64
+    gval::Float64
+    aerial_ids::Set{Int64}
+end
 
 # What is the drone ID for the edge it is taking? (0 if standard)
 @with_kw struct GroundMAPFAction <: MAPFAction
     edge_id::LightGraphs.Edge
-    edge_aerial_id::Int64
+    edge_aerial_ids::Set{Int64}
 end
 
 # Two or more cars that traverse the same edge for a particular drone ID
 @with_kw struct GroundMAPFConflict <: MAPFConflict
     ground_id_pair::Tuple{Int64,Int64}
-    conflicting_edge_aerial_ids::Vector{Tuple{LightGraphs.Edge,Int64}}
+    conflicting_edge_aerial_ids::Vector{Tuple{LightGraphs.Edge,Set{Int64}}}
 end
 
 # Constraint is to avoid a particular copy of the edge
@@ -83,12 +96,12 @@ end
     avoid_edge_copy_set::Dict{LightGraphs.Edge,Set{Int64}} = Dict{LightGraphs.Edge,Set{Int64}}()
 end
 Base.isempty(gpc::GroundMAPFConstraint) = isempty(gpc.avoid_edge_copy_set)
-
+MultiAgentPathFinding.get_empty_constraint(::Type{GroundMAPFConstraint}) = GroundMAPFConstraint()
 
 @with_kw mutable struct AgentPathState
     road_vtx_id::Int64
     timeval::Float64
-    coord_agent_id::Int64 = 0     # Of the other type
+    coord_agent_id::Set{Int64} = Set{Int64}()     # Of the other type
 end
 @with_kw mutable struct AgentPathInfo
     path_states::Vector{AgentPathState} = AgentPathState[]
@@ -107,6 +120,7 @@ end
     road_graph_wts::AbstractMatrix{Float64}
     location_list::Vector{Location2D}
     alpha_weight_distance::Float64
+    car_capacity::Int64
     ground_paths::Vector{AgentPathInfo} = AgentPathInfo[]
     aerial_paths::Vector{AgentPathInfo} = AgentPathInfo[]
     ground_transit_graph::SimpleVListGraph{GroundTransitState} = SimpleVListGraph{GroundTransitState}()
@@ -122,8 +136,9 @@ end
     gtg_idx_gval::Dict{Int64, Float64} = Dict{Int64, Float64}()
     edge_to_copy_info::Dict{LightGraphs.Edge, EdgeCopyInfo} = Dict{LightGraphs.Edge, EdgeCopyInfo}()
     ground_mapf_graph::SimpleVListGraph{GroundMAPFState} = SimpleVListGraph{GroundMAPFState}()
-    unique_gmapf_states::Dict{GroundMAPFState,Tuple{Int64,Float64}} = Dict{GroundMAPFState,Tuple{Int64,Float64}}()
+    unique_gmapf_states::Dict{GroundMAPFState,GMAPFStateInfo} = Dict{GroundMAPFState,Tuple{Int64,Float64}}()
     next_gmapfg_goal_idx::Int64 = 0
+    gtg_idx_to_aerial_ids::Dict{Int64,Vector{Int64}} = Dict{Int64,Vector{Int64}}()
 end
 
 ## NOTES

@@ -1,3 +1,4 @@
 data/
 *.DS_Store
 .vscode/
+scripts/test_drone_over_cars.jl

@@ -85,7 +85,7 @@ function get_non_dominated_transit_points(env::CoordinatedMAPFEnv, gstart::Int64
     return non_dom_set
 end
 
-function get_best_transit_connection(env::CoordinatedMAPFEnv, gstart::Int64, gend::Int64, avoid_vertex_set::Set{Int64}, v::AerialMAPFState, flight_heur::Bool)
+function get_best_transit_connection(env::CoordinatedMAPFEnv, gstart::Int64, gend::Int64, v::AerialMAPFState, flight_heur::Bool)
 
     best_weighted_cost = Inf
 
@@ -94,20 +94,17 @@ function get_best_transit_connection(env::CoordinatedMAPFEnv, gstart::Int64, gen
     result = (idx=0, timeval=0.0, distval=0.0)
 
     for seq = gstart:gend-1
-        # As soon as you hit a conflict vertex, stop
-        if ~(seq in avoid_vertex_set)
-            
-            seq_gtg = env.ground_transit_graph.vertices[seq]
-            ddiff = flight_heur ? distance_lat_lon_euclidean(env.location_list[vgtg.road_vtx_id], env.location_list[seq_gtg.road_vtx_id]) : env.ground_transit_weights[(v.ground_transit_idx, seq_gtg.idx)]
-            tval = max(v.timeval + ddiff/AvgSpeed, seq_gtg.timeval)
-            dval = v.distval + ddiff
-            tdiff = tval - seq_gtg.timeval
+        # As soon as you hit a conflict vertex, stop    
+        seq_gtg = env.ground_transit_graph.vertices[seq]
+        ddiff = flight_heur ? distance_lat_lon_euclidean(env.location_list[vgtg.road_vtx_id], env.location_list[seq_gtg.road_vtx_id]) : env.ground_transit_weights[(v.ground_transit_idx, seq_gtg.idx)]
+        tval = max(v.timeval + ddiff/AvgSpeed, seq_gtg.timeval)
+        dval = v.distval + ddiff
+        tdiff = tval - seq_gtg.timeval
 
-            weighted_cost = env.alpha_weight_distance*ddiff + (1.0-env.alpha_weight_distance)*tdiff
-            if weighted_cost < best_weighted_cost
-                best_weighted_cost = weighted_cost
-                result = (idx=seq_gtg.idx, timeval=tval, distval=dval)
-            end
+        weighted_cost = env.alpha_weight_distance*ddiff + (1.0-env.alpha_weight_distance)*tdiff
+        if weighted_cost < best_weighted_cost
+            best_weighted_cost = weighted_cost
+            result = (idx=seq_gtg.idx, timeval=tval, distval=dval)
         end
     end # seq = gstart:gend-1
 
@@ -144,4 +141,40 @@ function get_tasks_with_valid_path(road_graph::LightGraphs.AbstractGraph, road_g
     end
 
     return task_list
+end
+
+function compute_total_cost(env::CoordinatedMAPFEnv, ground_paths::Vector{AgentPathInfo}, aerial_paths::Vector{AgentPathInfo})
+
+    total_dist = sum(ap.total_dist for ap in aerial_paths) + sum(gp.total_dist for gp in ground_paths)
+    total_time = sum(ap.total_time for ap in aerial_paths) + sum(gp.total_time for gp in ground_paths)
+
+    return env.alpha_weight_distance*total_dist + (1.0-env.alpha_weight_distance)*total_time
+end
+
+function count_cars_not_coordinating(ground_paths::Vector{AgentPathInfo})
+
+    not_coord_ids = Set{Int64}()
+
+    for (gid, gpath) in enumerate(ground_paths)
+
+        is_coord = false
+        for gps in gpath.path_states
+            if ~isempty(gps.coord_agent_id)
+                is_coord = true
+                break
+            end
+        end
+        if ~is_coord
+            push!(not_coord_ids, gid)
+        end
+    end
+    return not_coord_ids
+end
+
+function get_increasing_dist_ordering(agent_paths::Vector{AgentPathInfo})
+
+    id_dist_tuples = [(id, path.total_dist) for (id, path) in enumerate(agent_paths)]
+    sort!(id_dist_tuples, by=x->x[2], rev=true)
+
+    return [idd[1] for idd in id_dist_tuples]
 end
