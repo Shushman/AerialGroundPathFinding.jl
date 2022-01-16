@@ -82,29 +82,14 @@ function main()
         push!(time_comps, t7)
 
         initial_amapf_states = [AerialMAPFState(idx=1, ground_transit_idx=sg[1]) for (i, sg) in enumerate(env.gtg_drone_start_goal_idxs)]
-        
-        t8 = @elapsed aerial_mapf_solver = ECBSSolver{AerialMAPFState,GroundTransitAction,Float64,SumOfCosts,GroundTransitConflict,GroundTransitConstraint,CoordinatedMAPFEnv}(env=env, weight=ECBS_WEIGHT)
+        t8 = @elapsed aerial_pp_ordering = get_increasing_dist_ordering(dir_drone_paths)
         push!(time_comps, t8)
+        # aerial_pp_ordering = collect(1:NDRONES)
 
-        aerial_cbs_soln = PlanResult[]
-        try
-            t9 = @elapsed aerial_cbs_soln = search!(aerial_mapf_solver, initial_amapf_states)
-            push!(time_comps, t9)
-        catch y
-            if isa(y, DomainError)
-                println("Too many conflicts in stage 2 of trial $(t-1)!")
-                continue
-            elseif  isa(y, BoundsError)
-                println("ECBS ran out of nodes in stage 2 of trial $(t-1)")
-                continue
-            else
-                throw(y)
-            end
-        end
+        t9 = @elapsed aerial_pp_soln = plan_prioritized_paths!(env, aerial_pp_ordering, initial_amapf_states, GroundTransitConstraint, PlanResult{AerialMAPFState,GroundTransitAction,Float64})
+        push!(time_comps, t9)
 
-        aerial_conflicts = env.num_global_conflicts
-
-        t10 = @elapsed update_aerial_ground_paths_cbs_solution!(env, aerial_cbs_soln, dir_drone_paths)
+        t10 = @elapsed update_aerial_ground_paths_cbs_solution!(env, aerial_pp_soln, dir_drone_paths)
         push!(time_comps, t10)
 
         not_coord_ids = count_cars_not_coordinating(env.ground_paths)
@@ -117,7 +102,7 @@ function main()
         total_time = sum(time_comps)
         stage2_time = total_time - stage1_time
 
-        res_dict = Dict("compute_time" => total_time, "total_path_cost" => total_dist, "ground_conflicts" => ground_conflicts, "aerial_conflicts" => aerial_conflicts, "stage1_time" => stage1_time, "stage2_time" => stage2_time)
+        res_dict = Dict{String,Float64}("compute_time" => sum(time_comps), "total_path_cost" => total_dist, "stage1_time" => stage1_time, "stage2_time" => stage2_time)
 
         if t > 1
             fname = string(OUTFILEDIR, "_Cars_", NCARS, "_Drones_", NDRONES, "_Capacity_", CAPACITY, "_Trial_", (t-1), ".json")

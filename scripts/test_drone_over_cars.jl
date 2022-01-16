@@ -13,8 +13,8 @@ const MANHATTAN_WEIGHTFILE = "../data/manhattan_sparse_wts.jld2"
 const SANFRANCISCO_NODEFILE = "../data/sanfrancisco_node_attribs.json"
 const SANFRANCISCO_WEIGHTFILE = "../data/sanfrancisco_sparse_wts.jld2"
 
-const NCARS = 30
-const NDRONES = 100
+const NCARS = 2
+const NDRONES = 4
 const ECBS_WEIGHT = 1.5
 const ALPHA_WEIGHT_DISTANCE = 1.0
 const CAPACITY = 5
@@ -26,6 +26,7 @@ function main(graph_weights::AbstractMatrix, loc_list_file::String, num_cars::In
     graph = LightGraphs.SimpleDiGraph(graph_weights)
     nvg = nv(graph)
     location_list = get_location2D_list(loc_list_file)
+    @infiltrate
 
     # Generate task list
     # Ensure that path exist

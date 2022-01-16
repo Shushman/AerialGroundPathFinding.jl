@@ -22,6 +22,9 @@ const OUTFILEDIR = ARGS[3]
 const CAPACITY = parse(Int64, ARGS[4])
 const TRIALS = parse(Int64, ARGS[5])
 
+
+## Stage 1 paths are computed directly
+## Stage 2 paths are drones over transit
 function main()
 
     @load MANHATTAN_WEIGHTFILE manhattan_sparse_wts
@@ -43,49 +46,26 @@ function main()
         t1 = @elapsed dir_drone_paths = compute_independent_paths(env, env.aerial_task_list)
         t2 = @elapsed dir_car_paths = compute_independent_paths(env, env.ground_task_list)
         push!(time_comps, t1+t2)
-
-        # New decay function
-        t3 = @elapsed augment_road_graph_with_aerial_paths!(env, dir_drone_paths, x -> 0.5*(1 + tanh(x)))
-        # t3 = @elapsed augment_road_graph_with_aerial_paths!(env, dir_drone_paths)
+        
+        # Just set env ground and aerial paths to direct and update 
+        env.ground_paths = dir_car_paths
+        env.aerial_paths = dir_drone_paths
+        t3 = @elapsed set_ground_transit_graph!(env, [ddp.total_dist for ddp in dir_drone_paths])
         push!(time_comps, t3)
 
-        initial_gmapf_states = [GroundMAPFState(task.origin, false) for task in env.ground_task_list]
-        ground_pp_ordering = collect(1:NCARS)
+        initial_amapf_states = [AerialMAPFState(idx=1, ground_transit_idx=sg[1]) for (_, sg) in enumerate(env.gtg_drone_start_goal_idxs)]
+        t4 = @elapsed aerial_pp_ordering = get_increasing_dist_ordering(dir_drone_paths)
+        push!(time_comps, t4)
 
-        
-
-        t5 = @elapsed ground_pp_soln = plan_prioritized_paths!(env, ground_pp_ordering, initial_gmapf_states, GroundMAPFConstraint, PlanResult{GroundMAPFState,GroundMAPFAction,Float64})
+        t5 = @elapsed aerial_pp_soln = plan_prioritized_paths!(env, aerial_pp_ordering, initial_amapf_states, GroundTransitConstraint, PlanResult{AerialMAPFState,GroundTransitAction,Float64})
         push!(time_comps, t5)
 
-        t6 = @elapsed update_ground_paths_with_ground_mapf_result!(env, ground_pp_soln)
+        t6 = @elapsed update_aerial_ground_paths_cbs_solution!(env, aerial_pp_soln, dir_drone_paths)
         push!(time_comps, t6)
-        stage1_time = sum(time_comps)
-
-        t7 = @elapsed set_ground_transit_graph!(env, [ddp.total_dist for ddp in dir_drone_paths])
-        push!(time_comps, t7)
-
-        initial_amapf_states = [AerialMAPFState(idx=1, ground_transit_idx=sg[1]) for (i, sg) in enumerate(env.gtg_drone_start_goal_idxs)]
-        t8 = @elapsed aerial_pp_ordering = get_increasing_dist_ordering(dir_drone_paths)
-        push!(time_comps, t8)
-        # aerial_pp_ordering = collect(1:NDRONES)
-
-        t9 = @elapsed aerial_pp_soln = plan_prioritized_paths!(env, aerial_pp_ordering, initial_amapf_states, GroundTransitConstraint, PlanResult{AerialMAPFState,GroundTransitAction,Float64})
-        push!(time_comps, t9)
-
-        t10 = @elapsed update_aerial_ground_paths_cbs_solution!(env, aerial_pp_soln, dir_drone_paths)
-        push!(time_comps, t10)
-
-        not_coord_ids = count_cars_not_coordinating(env.ground_paths)
-        for ncid in not_coord_ids
-            env.ground_paths[ncid] = dir_car_paths[ncid]
-        end
 
         total_dist = compute_total_cost(env, env.aerial_paths, env.ground_paths)
 
-        total_time = sum(time_comps)
-        stage2_time = total_time - stage1_time
-
-        res_dict = Dict{String,Float64}("compute_time" => sum(time_comps), "total_path_cost" => total_dist, "stage1_time" => stage1_time, "stage2_time" => stage2_time)
+        res_dict = Dict{String,Float64}("compute_time" => sum(time_comps), "total_path_cost" => total_dist)
 
         if t > 1
             fname = string(OUTFILEDIR, "_Cars_", NCARS, "_Drones_", NDRONES, "_Capacity_", CAPACITY, "_Trial_", (t-1), ".json")
