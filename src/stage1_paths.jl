@@ -171,9 +171,10 @@ function MultiAgentPathFinding.get_first_conflict(env::CoordinatedMAPFEnv, solut
             end # (si, (state_i, _)) in enumerate(sol_i.states[2:end])
 
             # NOTE: Any overlap blows up at 15 cars
-            if length(overlapping_aerial_edges) > div(min(length(sol_i.actions), length(sol_j.actions)), 5)
+            # if length(overlapping_aerial_edges) > div(min(length(sol_i.actions), length(sol_j.actions)), 5)
+            if ~isempty(overlapping_aerial_edges)
                 env.num_global_conflicts += 1
-                # println("Ground conflict no. $(env.num_global_conflicts)")
+                println("Ground conflict no. $(env.num_global_conflicts)")
                 if env.num_global_conflicts > env.threshold_global_conflicts
                     throw(DomainError("Too many conflicts in Stage 1!"))
                 end

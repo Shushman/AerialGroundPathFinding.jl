@@ -2,8 +2,7 @@
 
 # 10 drones; capacity 5
 # julia1.5 benchmark_direct.jl 5 10 ../data/results/direct/Direct 20
-# julia1.5 benchmark_cbs.jl 5 20 ../data/results/ecbs/ECBS 5 20 500
-julia1.5 benchmark_cbs.jl 5 15 ../data/results/ecbs/ECBS 5 20 500
+# julia1.5 benchmark_cbs.jl 5 10 ../data/results/ecbs/ECBS 5 20 500
 # julia1.5 benchmark_pp.jl 5 10 ../data/results/pp/PP 5 20
 
 # 10 drones; capacity 10
