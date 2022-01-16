@@ -55,7 +55,7 @@ export
 include("types.jl")
 include("utils.jl")
 include("stage1_paths.jl")
-include("ground_transit_pathfinding.jl")
+include("stage2_paths.jl")
 include("prioritized_planning.jl")
 
 end

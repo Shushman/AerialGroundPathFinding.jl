@@ -1,3 +1,9 @@
+"""
+    plan_prioritized_paths!(env::CoordinatedMAPFEnv, agent_ordering::Vector{Int64}, initial_states::Vector{MS}, cnr::Type{CNR}, pr::Type{PR})
+
+Run the Prioritized Planning algorithm. Given an ordering over agents, plan a path for each of them
+one-by-one and impose constraints derived from the path on subsequent agents.
+"""
 function plan_prioritized_paths!(env::CoordinatedMAPFEnv, agent_ordering::Vector{Int64}, initial_states::Vector{MS}, cnr::Type{CNR}, pr::Type{PR}) where {MS <: MAPFState, CNR <: MAPFConstraints, PR <: PlanResult}
 
     running_constraint = MultiAgentPathFinding.get_empty_constraint(cnr)
@@ -15,8 +21,6 @@ function plan_prioritized_paths!(env::CoordinatedMAPFEnv, agent_ordering::Vector
         # Add to path set
         push!(paths, id_path)
 
-        # println("PP Agent $(id) done!")
-        # @infiltrate
     end # id in agent_ordering
     return paths
 end
@@ -97,15 +101,12 @@ function low_level_pp_search!(env::CoordinatedMAPFEnv, aerial_agent_id::Int64, s
 
     vis = GroundTransitGoalVisitor(env, constraint.avoid_gid_vertex_set)
 
-    # println("Size of constraints: $(length(constraint.avoid_gid_vertex_set))")
-
     a_star_states = a_star_implicit_shortest_path!(env.aerial_mapf_graph,
                                                     edge_wt_fn,
                                                     start_idx,
                                                     vis,
                                                     admissible_heuristic
                                                     )
-    # println("Size of amapf_graph: $(length(env.aerial_mapf_graph.vertices))")
     
     # Get solution from a_star_eps_states
     # NOTE: It should always have a solution because drone can just fly

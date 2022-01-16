@@ -1,5 +1,8 @@
-# Returns distance in METRES
-# Graph edge weights also in METRES
+"""
+    distance_lat_lon_euclidean(coords1::Location2D, coords2::Location2D)
+
+Compute the Euclidean distance in metres between two lat-long coordinates close to each other.
+"""
 function distance_lat_lon_euclidean(coords1::Location2D, coords2::Location2D)
     deglen = 110.25
     x = coords1[1]- coords2[1]
@@ -7,9 +10,13 @@ function distance_lat_lon_euclidean(coords1::Location2D, coords2::Location2D)
     return deglen*sqrt(x^2 + y^2)*1000.0
 end
 
-
 Distances.evaluate(::EuclideanLatLongMetric, coords1::Location2D, coords2::Location2D) = distance_lat_lon_euclidean(coords1, coords2)
 
+"""
+    get_location2D_list(node_attribs_file::String)
+
+Returns the list of parsed 2D locations for the road graph nodes.
+"""
 function get_location2D_list(node_attribs_file::String)
 
     node_attribs_dict = JSON.parsefile(node_attribs_file)
@@ -38,11 +45,13 @@ function compute_bidir_astar_euclidean(g::LightGraphs.AbstractGraph, s::Int64, t
     return ShortestPaths.shortest_paths(g, s, t, distmx, bidir_astar)
 end
 
+"""
+    get_non_dominated_transit_points(env::CoordinatedMAPFEnv, gstart::Int64, gend::Int64, avoid_vertex_set::Set{Int64}, v::AerialMAPFState, flight_heur::Bool)
 
+Returns the ground transit points that are non-dominated on both time and flight distance.
+"""
 function get_non_dominated_transit_points(env::CoordinatedMAPFEnv, gstart::Int64, gend::Int64, avoid_vertex_set::Set{Int64}, v::AerialMAPFState, flight_heur::Bool)
 
-    # TODO: GO TO GEND-1, not to the end
-    # We will return the time_dist_set and let the caller use the dist and time
     time_dist_set = NamedTuple{(:idx, :timeval, :distval), Tuple{Int64, Float64, Float64}}[]
     vgtg = env.ground_transit_graph.vertices[v.ground_transit_idx]
 
@@ -85,6 +94,11 @@ function get_non_dominated_transit_points(env::CoordinatedMAPFEnv, gstart::Int64
     return non_dom_set
 end
 
+"""
+    get_best_transit_connection(env::CoordinatedMAPFEnv, gstart::Int64, gend::Int64, v::AerialMAPFState, flight_heur::Bool)
+
+Returns the lowest-cost ground transit connection point.
+"""
 function get_best_transit_connection(env::CoordinatedMAPFEnv, gstart::Int64, gend::Int64, v::AerialMAPFState, flight_heur::Bool)
 
     best_weighted_cost = Inf
@@ -143,6 +157,9 @@ function get_tasks_with_valid_path(road_graph::LightGraphs.AbstractGraph, road_g
     return task_list
 end
 
+"""
+    Computes sum-of-costs of the paths.
+"""
 function compute_total_cost(env::CoordinatedMAPFEnv, ground_paths::Vector{AgentPathInfo}, aerial_paths::Vector{AgentPathInfo})
 
     total_dist = sum(ap.total_dist for ap in aerial_paths) + sum(gp.total_dist for gp in ground_paths)

@@ -1,3 +1,8 @@
+"""
+    compute_independent_paths(env::CoordinatedMAPFEnv, task_list::Vector{AgentTask})
+
+For Direct baseline. Computes shortest start-goal paths for each agent without any coordination.
+"""
 function compute_independent_paths(env::CoordinatedMAPFEnv, task_list::Vector{AgentTask})
 
     independent_paths = Vector{AgentPathInfo}(undef, length(task_list))
@@ -25,9 +30,11 @@ struct EdgeCopyQueueType
     src::Int64
 end
 
-# Use drone paths to augment road graph
-# For k hops from each drone path edge, annotate edges with drone ID and reduced weight
-# Where W' = W*logistic(k) where k is the shortest of hops from the drone path
+"""
+    augment_road_graph_with_aerial_paths!(env::CoordinatedMAPFEnv, direct_drone_paths::Vector{AgentPathInfo}, decay_fn::Function)
+
+Use aerial paths to augment road graph.
+"""
 function augment_road_graph_with_aerial_paths!(env::CoordinatedMAPFEnv, direct_drone_paths::Vector{AgentPathInfo}, decay_fn::Function = x -> logistic(x))
 
 
@@ -107,8 +114,7 @@ function augment_road_graph_with_aerial_paths!(env::CoordinatedMAPFEnv, direct_d
 end # function augment_road_graph_with_aerial_paths!
 
 
-# Define MAPF functions for ground paths
-## Solve the subproblem of finding aerial paths over the ground transit network
+## Define MAPF functions for ground paths
 function MultiAgentPathFinding.add_constraint!(cbase::GroundMAPFConstraint, cadd::GroundMAPFConstraint)
     
     # iterate over edges and IDs of cadd and add new key to cbase or augment existing set
@@ -135,7 +141,7 @@ get_mapf_ground_action(env::CoordinatedMAPFEnv, u::GroundMAPFState, v::GroundMAP
 
 MultiAgentPathFinding.get_empty_constraint(::Type{GroundMAPFConstraint}) = GroundMAPFConstraint()
 
-# TODO
+
 function MultiAgentPathFinding.create_constraints_from_conflict(env::CoordinatedMAPFEnv, conflict::GroundMAPFConflict)
 
     # Iterate over conflicting edge Ids and create one element sets of edges to avoid of a drone ID
@@ -147,12 +153,10 @@ function MultiAgentPathFinding.create_constraints_from_conflict(env::Coordinated
     # Now just repeat the constraint for each member of pair
     gid_pair = conflict.ground_id_pair
     constraint = Dict{Int64,GroundMAPFConstraint}(gid_pair[1] => GroundMAPFConstraint(edge_set_to_avoid), gid_pair[2] => GroundMAPFConstraint(edge_set_to_avoid))
-    # @infiltrate
-    # @show constraint
+
     return [constraint]
 end
 
-# TODO: Review whether to add all edges or just some
 function MultiAgentPathFinding.get_first_conflict(env::CoordinatedMAPFEnv, solution::Vector{PlanResult{GroundMAPFState,GroundMAPFAction,Float64}})
 
     # For the first two trucks that share one or more edges of same drones, return
@@ -170,15 +174,13 @@ function MultiAgentPathFinding.get_first_conflict(env::CoordinatedMAPFEnv, solut
                 end # (sj, (state_j, _)) in enumerate(sol_j.states[2:end])
             end # (si, (state_i, _)) in enumerate(sol_i.states[2:end])
 
-            # NOTE: Any overlap blows up at 15 cars
-            # if length(overlapping_aerial_edges) > div(min(length(sol_i.actions), length(sol_j.actions)), 5)
             if ~isempty(overlapping_aerial_edges)
                 env.num_global_conflicts += 1
                 println("Ground conflict no. $(env.num_global_conflicts)")
                 if env.num_global_conflicts > env.threshold_global_conflicts
                     throw(DomainError("Too many conflicts in Stage 1!"))
                 end
-                # @infiltrate
+
                 return GroundMAPFConflict((i, other_ground_id), overlapping_aerial_edges)
             end
         end # (j, sol_j) in enumerate(solution[i+1:end])
@@ -202,12 +204,9 @@ function generate_ground_mapf_edge_weight(env::CoordinatedMAPFEnv, u::GroundMAPF
 
         # Subtract cost diff from base for each drone edge
         for aid in aerial_ids
-            # if !haskey(env.edge_to_copy_info[uv_edge].aerial_id_to_weight, aid)
-            #     @infiltrate
-            # end
             cumul_wt -= (base_wt - env.edge_to_copy_info[uv_edge].aerial_id_to_weight[aid])
         end
-        # @infiltrate
+
         return cumul_wt
     end
 end
@@ -227,7 +226,6 @@ function MultiAgentPathFinding.focal_heuristic(env::CoordinatedMAPFEnv, solution
     for (i, sol_i) in enumerate(solution[1:end-1])
         for (j, sol_j) in enumerate(solution[i+1:end])
 
-            other_ground_id = i+j
             num_overlapping_aerial_edges = 0
 
             for (i_action, _) in sol_i.actions
@@ -238,7 +236,6 @@ function MultiAgentPathFinding.focal_heuristic(env::CoordinatedMAPFEnv, solution
                 end # (sj, (state_j, _)) in enumerate(sol_j.states[2:end])
             end # (si, (state_i, _)) in enumerate(sol_i.states[2:end])
 
-            # NOTE: Think carefully about conflict criterion
             if num_overlapping_aerial_edges > 0
                 num_potential_conflicts += 1
             end
@@ -249,7 +246,9 @@ function MultiAgentPathFinding.focal_heuristic(env::CoordinatedMAPFEnv, solution
 end
 
 
-# Search over augmented road graph
+"""
+Underlying per-agent search over the Stage 1 MAPF graph.
+"""
 function MultiAgentPathFinding.low_level_search!(solver::ECBSSolver, ground_agent_id::Int64, s::GroundMAPFState, constraint::GroundMAPFConstraint, solution::Vector{PlanResult{GroundMAPFState,GroundMAPFAction,Float64}})
 
     env = solver.env
@@ -270,11 +269,8 @@ function MultiAgentPathFinding.low_level_search!(solver::ECBSSolver, ground_agen
     start_idx = 1
     env.next_gmapfg_goal_idx = 0
 
-    # @infiltrate
 
     a_star_states = a_star_implicit_shortest_path!(env.ground_mapf_graph, edge_wt_fn, start_idx, vis, admissible_heuristic)
-
-    # @show length(env.ground_mapf_graph.vertices)
 
 
     @assert haskey(a_star_states.parent_indices, env.next_gmapfg_goal_idx)
@@ -297,8 +293,6 @@ function MultiAgentPathFinding.low_level_search!(solver::ECBSSolver, ground_agen
 
         push!(actions, (get_mapf_ground_action(env, env.ground_mapf_graph.vertices[u_idx], env.ground_mapf_graph.vertices[v_idx]), a_star_states.dists[v_idx] - a_star_states.dists[u_idx]))
     end
-
-    # @infiltrate
 
     return PlanResult{GroundMAPFState,GroundMAPFAction,Float64}(states, actions, sp_cost, sp_cost)
 end
@@ -323,7 +317,7 @@ function Graphs.include_vertex!(vis::GroundMAPFGoalVisitor, u::GroundMAPFState, 
         return false
     end
 
-    # Simple, just look up outneighbors of v.road_vtx_id in the true road graph
+    # Look up outneighbors of v.road_vtx_id in the true road graph
     # For each outneighbor, if no edge copies, just add onbr with aerial ID 0
     # Otherwise, add the outnbr with lowest cost among edge copies if not in avoid_edge_set
     idx_ctr = Graphs.num_vertices(env.ground_mapf_graph)
@@ -391,7 +385,11 @@ function Graphs.include_vertex!(vis::GroundMAPFGoalVisitor, u::GroundMAPFState, 
 end
 
 
-# Incorporate time and true distance info here
+"""
+    update_ground_paths_with_ground_mapf_result!(env::CoordinatedMAPFEnv, solution::Vector{PlanResult})
+
+Using the Stage 1 MAPF solution, update the set of solution paths in the env datastructure
+"""
 function update_ground_paths_with_ground_mapf_result!(env::CoordinatedMAPFEnv, solution::Vector{PlanResult{GroundMAPFState,GroundMAPFAction,Float64}})
     
     env.ground_paths = Vector{AgentPathInfo}(undef, length(env.ground_task_list))
@@ -414,5 +412,3 @@ function update_ground_paths_with_ground_mapf_result!(env::CoordinatedMAPFEnv, s
         env.ground_paths[ground_id] = AgentPathInfo(path_states=path_states, total_dist=cumul_dist, total_time=cumul_time)
     end
 end
-
-## For prioritized planning

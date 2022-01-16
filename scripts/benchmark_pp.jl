@@ -21,6 +21,7 @@ const NDRONES = parse(Int64, ARGS[2])
 const OUTFILEDIR = ARGS[3]
 const CAPACITY = parse(Int64, ARGS[4])
 const TRIALS = parse(Int64, ARGS[5])
+const DECAY = parse(Int64, ARGS[6])
 
 function main()
 
@@ -45,8 +46,11 @@ function main()
         push!(time_comps, t1+t2)
 
         # New decay function
-        t3 = @elapsed augment_road_graph_with_aerial_paths!(env, dir_drone_paths, x -> 0.5*(1 + tanh(x)))
-        # t3 = @elapsed augment_road_graph_with_aerial_paths!(env, dir_drone_paths)
+        if DECAY == "TANH"
+            t3 = @elapsed augment_road_graph_with_aerial_paths!(env, dir_drone_paths, x -> 0.5*(1 + tanh(x)))
+        else
+            t3 = @elapsed augment_road_graph_with_aerial_paths!(env, dir_drone_paths) # logistic by default
+        end
         push!(time_comps, t3)
 
         initial_gmapf_states = [GroundMAPFState(task.origin, false) for task in env.ground_task_list]
@@ -67,7 +71,6 @@ function main()
         initial_amapf_states = [AerialMAPFState(idx=1, ground_transit_idx=sg[1]) for (i, sg) in enumerate(env.gtg_drone_start_goal_idxs)]
         t8 = @elapsed aerial_pp_ordering = get_increasing_dist_ordering(dir_drone_paths)
         push!(time_comps, t8)
-        # aerial_pp_ordering = collect(1:NDRONES)
 
         t9 = @elapsed aerial_pp_soln = plan_prioritized_paths!(env, aerial_pp_ordering, initial_amapf_states, GroundTransitConstraint, PlanResult{AerialMAPFState,GroundTransitAction,Float64})
         push!(time_comps, t9)

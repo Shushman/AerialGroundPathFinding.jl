@@ -18,6 +18,18 @@ const AgentTask = NamedTuple{(:origin, :dest), Tuple{Int64, Int64}}
 const AvgSpeed = 10.0  # 6 m/s for drones and cars 
 const MaxHop = 3
 
+## Types for Aerial MAPF problem
+
+"""
+MAPF State for aerial routes. Thin wrapper around GTG vertices, with just drone time.
+"""
+@with_kw struct AerialMAPFState <: MAPFState
+    idx::Int64
+    ground_transit_idx::Int64   # Which TRANSIT GRAPH vertex ID
+    timeval::Float64 = 0.0  # Only relevant for transit points
+    distval::Float64 = 0.0
+    considered_cars::Set{Int64} = Set{Int64}()
+end
 
 @enum ActionType Fly=1 Stay=2
 struct GroundTransitAction <: MAPFAction
@@ -41,29 +53,20 @@ end
 Base.isempty(gtvc::GroundTransitVertexConstraint) = isempty(gtvc.avoid_gtg_vertex_set)
 MultiAgentPathFinding.get_empty_constraint(::Type{GroundTransitVertexConstraint}) = GroundTransitVertexConstraint()
 
-
-
-# For the graph of ground time-stamped waypoints
-# Must be mutable as cars can wait for drones
+"""
+For the graph of ground time-stamped waypoints. Must be mutable as cars can wait for drones
+""" 
 @with_kw mutable struct GroundTransitState
-    idx::Int64                  # Only for reverse lookup
+    idx::Int64                      # Only for reverse lookup
     ground_agent_id::Int64 = 0      # When 0, indicates aerial start-goal
     vertex_along_path::Int64 = 0    # Goes from 1 to path length
-    road_vtx_id::Int64          # Vertex ID in road graph
-    timeval::Float64 = 0.0              # Global time of ground vehicle
+    road_vtx_id::Int64              # Vertex ID in road graph
+    timeval::Float64 = 0.0          # Global time of ground vehicle
 end
 
 Graphs.vertex_index(g::SimpleVListGraph{GroundTransitState}, v::GroundTransitState) = v.idx
 
-# MAPF State for aerial
-# Thin wrapper around GTG vertices, with just drone time 
-@with_kw struct AerialMAPFState <: MAPFState
-    idx::Int64
-    ground_transit_idx::Int64   # Which TRANSIT GRAPH vertex ID
-    timeval::Float64 = 0.0  # Only relevant for transit points
-    distval::Float64 = 0.0
-    considered_cars::Set{Int64} = Set{Int64}()
-end
+
 
 ## Types for ground MAPF
 @with_kw struct GroundMAPFState <: MAPFState
@@ -78,41 +81,51 @@ Base.isequal(s1::GroundMAPFState, s2::GroundMAPFState) = (s1.road_vtx_id == s2.r
     aerial_ids::Set{Int64}
 end
 
-# What is the drone ID for the edge it is taking? (0 if standard)
 @with_kw struct GroundMAPFAction <: MAPFAction
     edge_id::LightGraphs.Edge
     edge_aerial_ids::Set{Int64}
 end
 
-# Two or more cars that traverse the same edge for a particular drone ID
 @with_kw struct GroundMAPFConflict <: MAPFConflict
     ground_id_pair::Tuple{Int64,Int64}
     conflicting_edge_aerial_ids::Vector{Tuple{LightGraphs.Edge,Set{Int64}}}
 end
 
-# Constraint is to avoid a particular copy of the edge
-# Maps edge ID to the aerial IDs to avoid
 @with_kw struct GroundMAPFConstraint <: MAPFConstraints
     avoid_edge_copy_set::Dict{LightGraphs.Edge,Set{Int64}} = Dict{LightGraphs.Edge,Set{Int64}}()
 end
 Base.isempty(gpc::GroundMAPFConstraint) = isempty(gpc.avoid_edge_copy_set)
 MultiAgentPathFinding.get_empty_constraint(::Type{GroundMAPFConstraint}) = GroundMAPFConstraint()
 
+"""
+General path state type for both agent types
+"""
 @with_kw mutable struct AgentPathState
     road_vtx_id::Int64
     timeval::Float64
     coord_agent_id::Set{Int64} = Set{Int64}()     # Of the other type
 end
+
+"""
+General type to store the paths for agents, agnostic to ground/aerial
+"""
 @with_kw mutable struct AgentPathInfo
     path_states::Vector{AgentPathState} = AgentPathState[]
     total_dist::Float64                 = 0.0
     total_time::Float64                 = 0.0
 end
 
+"""
+Weight-discounted aerial-annotated edge copies
+"""
 @with_kw mutable struct EdgeCopyInfo
     aerial_id_to_weight::Dict{Int64, Float64} = Dict{Int64, Float64}()
 end
 
+
+"""
+The overall struct for the full MAPF problem.
+"""
 @with_kw mutable struct CoordinatedMAPFEnv <: MAPFEnvironment
     ground_task_list::Vector{AgentTask}
     aerial_task_list::Vector{AgentTask}
@@ -140,6 +153,3 @@ end
     next_gmapfg_goal_idx::Int64 = 0
     gtg_idx_to_aerial_ids::Dict{Int64,Vector{Int64}} = Dict{Int64,Vector{Int64}}()
 end
-
-## NOTES
-# 1. Transit Graph must be different from MAPF States if we are tracking time
